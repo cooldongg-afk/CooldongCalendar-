@@ -1,0 +1,1 @@
+Temporary CI verification for v1.4: exact event-ID edit actions, sparse-card expansion, and Korean M/d weekday headers. No signing keys are stored in this repository.
