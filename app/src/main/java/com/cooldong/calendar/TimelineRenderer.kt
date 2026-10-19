@@ -319,6 +319,61 @@ object TimelineRenderer {
             }
         }
 
+        // The current-time line belongs to today, not the first displayed day.
+        // Draw it on top of the grid but UNDER event cards and their text, so
+        // it never looks like a strikethrough on an appointment title.
+        val now = Calendar.getInstance()
+        val todayIndex = dayDates.indexOfFirst { dateKey(it) == dateKey(now) }
+        val currentMinute = now.get(Calendar.HOUR_OF_DAY) * 60 +
+            now.get(Calendar.MINUTE) +
+            now.get(Calendar.SECOND) / 60f
+        val firstMinute = startHour * 60f
+        val lastMinute = endHour * 60f
+        val currentMarkerVisible = todayIndex >= 0 &&
+            currentMinute >= firstMinute && currentMinute < lastMinute
+        val nowColor = Color.rgb(233, 56, 73)
+        if (currentMarkerVisible) {
+            val currentY = gridTop +
+                (currentMinute - firstMinute) / (lastMinute - firstMinute) * gridH
+            val leftOfToday = gutter + todayIndex * dayW
+            val rightOfToday = min(w - 1f, leftOfToday + dayW)
+            // A faint full-width guide keeps the exact hour legible against
+            // the entire week; today's segment is brighter and thicker.
+            stroke(canvas, gutter, currentY, w, currentY,
+                Color.argb(80, 233, 56, 73), 0.8f)
+            stroke(canvas, leftOfToday + 1f, currentY,
+                rightOfToday - 1f, currentY, nowColor, 2.1f)
+            val markerPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = nowColor
+            }
+            canvas.drawCircle(leftOfToday + 3f, currentY, 3.2f, markerPaint)
+            // The left time gutter shows a red HH:mm marker. Place it on an
+            // opaque pill to prevent old hour labels showing underneath.
+            val timeLabel = String.format(
+                Locale.KOREA, "%02d:%02d",
+                now.get(Calendar.HOUR_OF_DAY), now.get(Calendar.MINUTE)
+            )
+            val pill = RectF(0.6f, currentY - 7.4f, gutter - 2f, currentY + 7.4f)
+            rounded(canvas, pill, nowColor, 4f)
+            val labelPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                color = Color.WHITE
+                textSize = 9f
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            }
+            // Fit the whole 24-hour time even in a 31dp gutter.
+            while (labelPaint.measureText(timeLabel) > pill.width() - 3f &&
+                labelPaint.textSize > 7f
+            ) {
+                labelPaint.textSize -= 0.5f
+            }
+            canvas.drawText(
+                timeLabel, pill.left + max(1.5f,
+                    (pill.width() - labelPaint.measureText(timeLabel)) / 2f),
+                currentY - (labelPaint.ascent() + labelPaint.descent()) / 2f,
+                labelPaint
+            )
+        }
+
         val cards = TimelineLayout.cards(
             widthDp, heightDp, start, days, startHour, endHour, events
         )
@@ -347,6 +402,26 @@ object TimelineRenderer {
                 else -> 9.3f
             }
             putEventText(canvas, label, rect, font, theme.inkFor(bg))
+            // A red OUTLINE, never a line over text, identifies the appointment
+            // which is actually in progress (not an extended label-only area).
+            if (currentMarkerVisible && card.dayIndex == todayIndex &&
+                !card.event.allDay &&
+                now.timeInMillis >= card.event.begin &&
+                now.timeInMillis < card.event.end
+            ) {
+                val outline = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                    color = nowColor
+                    style = Paint.Style.STROKE
+                    strokeWidth = 2.4f
+                }
+                canvas.drawRoundRect(
+                    RectF(
+                        rect.left + 1.3f, rect.top + 1.3f,
+                        rect.right - 1.3f, rect.bottom - 1.3f
+                    ),
+                    3.1f, 3.1f, outline
+                )
+            }
         }
         return bitmap
     }
