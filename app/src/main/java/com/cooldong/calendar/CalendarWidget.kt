@@ -71,9 +71,15 @@ class CalendarWidget : AppWidgetProvider() {
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
-                if (prefs.getInt("basis", 0) == 0) {
-                    val mondayOffset = (get(Calendar.DAY_OF_WEEK) + 5) % 7
-                    add(Calendar.DAY_OF_MONTH, -mondayOffset)
+                when (prefs.getInt("basis", 0)) {
+                    0 -> {
+                        val mondayOffset = (get(Calendar.DAY_OF_WEEK) + 5) % 7
+                        add(Calendar.DAY_OF_MONTH, -mondayOffset)
+                    }
+                    2 -> {
+                        val sundayOffset = get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY
+                        add(Calendar.DAY_OF_MONTH, -sundayOffset)
+                    }
                 }
             }
             val rangeEnd = (start.clone() as Calendar).apply { add(Calendar.DATE, days + 2) }
@@ -103,7 +109,6 @@ class CalendarWidget : AppWidgetProvider() {
                 )
                 views.setOnClickPendingIntent(R.id.timeline_image, click)
                 manager.updateAppWidget(id, views)
-                bitmap.recycle()
             }
         }
 
