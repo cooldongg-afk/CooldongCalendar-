@@ -9,6 +9,7 @@ import android.content.pm.PackageManager
 import android.os.Bundle
 import android.view.View
 import android.view.ViewGroup
+import android.widget.AdapterView
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.CheckBox
@@ -172,6 +173,35 @@ class SettingsActivity : Activity() {
         }
         root.addView(showTimes)
 
+        root.addView(label("③ 디자인 테마", true))
+        root.addView(tip(
+            "기본 디자인은 그대로 유지됩니다. 토스처럼 여백과 대비가 깔끔한 색상 조합 " +
+                "6가지를 추가했습니다. 테마를 바꾸면 아래 미리보기가 즉시 바뀝니다."
+        ))
+        val themeChoice = combo(
+            WidgetThemes.all.map { it.name },
+            prefs.getInt("themeId", 0)
+        )
+        val themeSubtitle = tip(WidgetThemes.get(themeChoice.selectedItemPosition).description)
+        root.addView(themeSubtitle)
+        val themePreview = ThemePreviewView(this).apply {
+            themeId = themeChoice.selectedItemPosition
+            setBackgroundColor(0xFFE5E9F0.toInt())
+        }
+        root.addView(themePreview, ViewGroup.LayoutParams(-1, dp(206)))
+        themeChoice.onItemSelectedListener = object : AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(
+                parent: AdapterView<*>?, view: View?, position: Int, id: Long
+            ) {
+                themePreview.themeId = position
+                themeSubtitle.text = WidgetThemes.get(position).description
+            }
+            override fun onNothingSelected(parent: AdapterView<*>?) {}
+        }
+        root.addView(tip(
+            "토요일은 파란색, 일요일·공휴일은 빨간색으로 모든 테마에서 유지됩니다."
+        ))
+
         fun persist(): Boolean {
             val from = fromHour.selectedItemPosition
             val to = endHour.selectedItemPosition + 1
@@ -191,6 +221,7 @@ class SettingsActivity : Activity() {
                 .putInt("endHour", to)
                 .putInt("transparency", transparency.progress)
                 .putBoolean("times", showTimes.isChecked)
+                .putInt("themeId", themeChoice.selectedItemPosition)
                 .apply()
             if (sources.isNotEmpty()) CalendarRepository.saveSelectedIds(this, chosen)
             return true
@@ -255,7 +286,7 @@ class SettingsActivity : Activity() {
             }.start()
         }
 
-        root.addView(label("③ 위젯 크기 선택", true))
+        root.addView(label("④ 위젯 크기 선택", true))
         root.addView(tip(
             "소형·표준·대형 중 골라 새 위젯을 추가할 수 있습니다. " +
             "이미 배치한 위젯은 홈 화면에서 길게 눌러 크기를 조정하세요."
