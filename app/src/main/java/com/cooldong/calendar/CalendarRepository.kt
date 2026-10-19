@@ -7,6 +7,7 @@ import android.content.pm.PackageManager
 import android.graphics.Color
 import android.provider.CalendarContract
 import java.util.Calendar
+import java.util.TimeZone
 
 /**
  * Android's system CalendarProvider is the only supported shared interface for calendars
@@ -25,7 +26,8 @@ data class CalendarLoad(
     val events: List<CalendarEvent>,
     val calendars: List<CalendarSource>,
     val selectedCalendarCount: Int,
-    val error: String? = null
+    val error: String? = null,
+    val holidayKeys: Set<Int> = emptySet()
 )
 
 object CalendarRepository {
@@ -118,9 +120,12 @@ object CalendarRepository {
             CalendarContract.Instances.END,
             CalendarContract.Instances.ALL_DAY,
             CalendarContract.Instances.DISPLAY_COLOR,
-            CalendarContract.Instances.CALENDAR_ID
+            CalendarContract.Instances.CALENDAR_ID,
+            CalendarContract.Instances.EVENT_ID
         )
         val events = ArrayList<CalendarEvent>()
+        val holidayDates = HashSet<Int>()
+        val labels = sources.associate { it.id to it.label }
         return try {
             ctx.contentResolver.query(
                 uri, projection, null, null,
@@ -128,9 +133,24 @@ object CalendarRepository {
             )?.use { cursor ->
                 while (cursor.moveToNext() && events.size < 2500) {
                     val calendarId = cursor.getLong(5)
-                    if (calendarId !in ids) continue
                     val begin = cursor.getLong(1)
                     val end = cursor.getLong(2).coerceAtLeast(begin + 60000L)
+                    val title = cursor.getString(0) ?: "제목 없는 일정"
+                    val allDay = cursor.getInt(3) != 0
+                    if (allDay && HolidayRules.isHolidayEvent(
+                            title, labels[calendarId] ?: ""
+                        )
+                    ) {
+                        val utc = Calendar.getInstance(TimeZone.getTimeZone("UTC"))
+                        utc.timeInMillis = begin
+                        var count = 0
+                        while (utc.timeInMillis < end && count < 15) {
+                            holidayDates.add(HolidayRules.dateKey(utc))
+                            utc.add(Calendar.DATE, 1)
+                            count++
+                        }
+                    }
+                    if (calendarId !in ids) continue
                     val rawColor = if (cursor.isNull(4)) 0 else cursor.getInt(4)
                     val color = if (rawColor == Color.TRANSPARENT) {
                         0xFF3676CC.toInt()
@@ -143,17 +163,18 @@ object CalendarRepository {
                     }
                     events.add(
                         CalendarEvent(
-                            cursor.getString(0) ?: "제목 없는 일정",
+                            title,
                             begin,
                             end,
-                            cursor.getInt(3) != 0,
+                            allDay,
                             color,
-                            calendarId
+                            calendarId,
+                            cursor.getLong(6)
                         )
                     )
                 }
             }
-            CalendarLoad(events, sources, sources.count { it.id in ids })
+            CalendarLoad(events, sources, sources.count { it.id in ids }, holidayKeys = holidayDates)
         } catch (e: Exception) {
             CalendarLoad(
                 emptyList(), sources, sources.count { it.id in ids },
