@@ -246,6 +246,7 @@ open class CalendarWidget : AppWidgetProvider() {
             val startHour = prefs.getInt("startHour", 7).coerceIn(0, 23)
             val endHour = prefs.getInt("endHour", 22).coerceIn(startHour + 1, 24)
             val alphaPercent = prefs.getInt("transparency", 0).coerceIn(0, 100)
+            val theme = WidgetThemes.get(prefs.getInt("themeId", 0))
             val backgroundAlpha = (255 * (100 - alphaPercent) / 100f).toInt()
             val landscape = ctx.resources.configuration.orientation ==
                 Configuration.ORIENTATION_LANDSCAPE
@@ -273,11 +274,30 @@ open class CalendarWidget : AppWidgetProvider() {
                     val view = RemoteViews(ctx.packageName, R.layout.widget)
                     view.setInt(
                         R.id.widget_root, "setBackgroundColor",
-                        Color.argb(backgroundAlpha, 255, 255, 255)
+                        Color.argb(
+                            backgroundAlpha,
+                            Color.red(theme.background),
+                            Color.green(theme.background),
+                            Color.blue(theme.background)
+                        )
                     )
                     view.setInt(
-                        R.id.widget_toolbar, "setBackgroundColor",
-                        Color.argb(240, 25, 36, 53)
+                        R.id.widget_toolbar, "setBackgroundColor", theme.toolbar
+                    )
+                    for (target in intArrayOf(
+                        R.id.nav_prev, R.id.nav_next, R.id.nav_title,
+                        R.id.nav_today, R.id.nav_refresh, R.id.nav_settings
+                    )) {
+                        view.setTextColor(target, theme.toolbarText)
+                    }
+                    view.setTextColor(R.id.empty_hint, theme.text)
+                    view.setInt(R.id.empty_hint, "setBackgroundColor",
+                        Color.argb(
+                            237,
+                            Color.red(theme.background),
+                            Color.green(theme.background),
+                            Color.blue(theme.background)
+                        )
                     )
                     val head = if (days == 1) {
                         (day.get(Calendar.MONTH) + 1).toString() + "/" + day.get(Calendar.DATE)
@@ -327,7 +347,7 @@ open class CalendarWidget : AppWidgetProvider() {
                         ctx, width, renderedHeight, day, days,
                         startHour, endHour, alphaPercent,
                         prefs.getBoolean("times", true),
-                        data.events, data.holidayKeys
+                        data.events, data.holidayKeys, theme.id
                     )
                     view.setImageViewBitmap(R.id.timeline_image, bitmap)
                     attachTouchGrid(
