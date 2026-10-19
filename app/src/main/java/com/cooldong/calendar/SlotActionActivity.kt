@@ -22,6 +22,9 @@ class SlotActionActivity : Activity() {
         const val EXTRA_START = "startMillis"
         const val EXTRA_END = "endMillis"
         const val EXTRA_ALL_DAY = "allDay"
+        const val EXTRA_EVENT_ID = "sourceEventId"
+        const val EXTRA_EVENT_START = "sourceEventStart"
+        const val EXTRA_EVENT_END = "sourceEventEnd"
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -30,6 +33,21 @@ class SlotActionActivity : Activity() {
         val end = intent.getLongExtra(EXTRA_END, -1L)
         val allDay = intent.getBooleanExtra(EXTRA_ALL_DAY, false)
         if (start < 0L || end <= start) {
+            finish()
+            return
+        }
+        val directEventId = intent.getLongExtra(EXTRA_EVENT_ID, -1L)
+        if (directEventId > 0L) {
+            // The widget has already resolved the painted card to its exact
+            // CalendarContract.Events ID. No second time-range query is needed.
+            val eventBegin = intent.getLongExtra(EXTRA_EVENT_START, start)
+            val eventEnd = intent.getLongExtra(EXTRA_EVENT_END, end)
+            showExistingEvent(
+                CalendarEvent(
+                    "", eventBegin, eventEnd, allDay, 0,
+                    eventId = directEventId
+                )
+            )
             finish()
             return
         }
@@ -121,30 +139,53 @@ class SlotActionActivity : Activity() {
             Toast.makeText(this, "일정 ID를 확인할 수 없습니다", Toast.LENGTH_SHORT).show()
             return
         }
-        val uri = ContentUris.withAppendedId(CalendarContract.Events.CONTENT_URI, event.eventId)
-        val intent = Intent(Intent.ACTION_VIEW, uri).apply {
+        val uri = ContentUris.withAppendedId(
+            CalendarContract.Events.CONTENT_URI, event.eventId
+        )
+        val editIntent = Intent(Intent.ACTION_EDIT, uri).apply {
             putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.begin)
             putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end)
         }
-        openSamsungFirst(intent)
-    }
-
-    private fun openSamsungFirst(intent: Intent) {
-        val samsung = Intent(intent).apply {
-            setPackage("com.samsung.android.calendar")
-        }
-        val selected = if (samsung.resolveActivity(packageManager) != null) samsung else intent
-        try {
-            startActivity(selected)
-        } catch (_: Exception) {
-            try {
-                startActivity(intent)
-            } catch (_: Exception) {
+        // Prefer opening the native editor. Some Samsung Calendar versions only
+        // expose a public VIEW activity; in that case open the detail screen
+        // where the edit and delete actions are available.
+        if (!tryOpenSamsungFirst(editIntent)) {
+            val viewIntent = Intent(Intent.ACTION_VIEW, uri).apply {
+                putExtra(CalendarContract.EXTRA_EVENT_BEGIN_TIME, event.begin)
+                putExtra(CalendarContract.EXTRA_EVENT_END_TIME, event.end)
+            }
+            if (!tryOpenSamsungFirst(viewIntent)) {
                 Toast.makeText(
-                    this, "캘린더 앱에서 이 동작을 지원하지 않습니다",
+                    this, "삼성 캘린더에서 일정을 열 수 없습니다",
                     Toast.LENGTH_LONG
                 ).show()
             }
         }
+    }
+
+    private fun openSamsungFirst(intent: Intent) {
+        if (!tryOpenSamsungFirst(intent)) {
+            Toast.makeText(
+                this, "캘린더 앱에서 이 동작을 지원하지 않습니다",
+                Toast.LENGTH_LONG
+            ).show()
+        }
+    }
+
+    private fun tryOpenSamsungFirst(intent: Intent): Boolean {
+        val samsung = Intent(intent).apply {
+            setPackage("com.samsung.android.calendar")
+        }
+        for (candidate in listOf(samsung, intent)) {
+            try {
+                if (candidate.resolveActivity(packageManager) != null) {
+                    startActivity(candidate)
+                    return true
+                }
+            } catch (_: Exception) {
+                // Continue with the standard Android calendar app fallback.
+            }
+        }
+        return false
     }
 }
