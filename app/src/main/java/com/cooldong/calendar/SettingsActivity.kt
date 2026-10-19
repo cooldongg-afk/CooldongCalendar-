@@ -53,7 +53,7 @@ class SettingsActivity : Activity() {
         page.addView(title)
 
         heading("주간 시작 기준")
-        val basis = spinner(listOf("월요일부터", "오늘부터"), prefs.getInt("basis", 0))
+        val basis = spinner(listOf("월요일부터", "오늘부터", "일요일부터"), prefs.getInt("basis", 0))
 
         heading("가로 표시 일수")
         val choices = listOf(1, 3, 5, 7)
