@@ -42,7 +42,7 @@ open class CalendarWidget : AppWidgetProvider() {
                 val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
                 if (id == -1) return
                 val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
-                val stride = prefs.getInt("days", 7).coerceIn(1, 7)
+                val stride = daysForWidget(context, AppWidgetManager.getInstance(context), id)
                 val key = "offsetDays_" + id
                 val current = prefs.getInt(key, 0)
                 val next = when (intent.action) {
@@ -66,6 +66,22 @@ open class CalendarWidget : AppWidgetProvider() {
         const val ACTION_NEXT = "com.cooldong.calendar.NEXT"
         const val ACTION_TODAY = "com.cooldong.calendar.TODAY"
         const val ACTION_REFRESH = "com.cooldong.calendar.REFRESH"
+
+        private fun daysForWidget(
+            ctx: Context, manager: AppWidgetManager, id: Int
+        ): Int {
+            val requested = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                .getInt("days", 0)
+            if (requested in listOf(1, 3, 5, 7)) return requested
+            val width = manager.getAppWidgetOptions(id).getInt(
+                AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 300
+            )
+            return when {
+                width < 230 -> 3
+                width < 335 -> 5
+                else -> 7
+            }
+        }
 
         private val widgetClasses: List<Class<out AppWidgetProvider>> = listOf(
             CalendarWidget::class.java,
@@ -120,7 +136,6 @@ open class CalendarWidget : AppWidgetProvider() {
         fun updateAll(ctx: Context, manager: AppWidgetManager, ids: IntArray) {
             if (ids.isEmpty()) return
             val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
-            val days = prefs.getInt("days", 7).coerceIn(1, 7)
             val basis = prefs.getInt("basis", 0)
             val first = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, 0)
@@ -141,6 +156,7 @@ open class CalendarWidget : AppWidgetProvider() {
 
             for (id in ids) {
                 try {
+                    val days = daysForWidget(ctx, manager, id)
                     val day = (first.clone() as Calendar).apply {
                         add(Calendar.DATE, prefs.getInt("offsetDays_" + id, 0))
                     }
