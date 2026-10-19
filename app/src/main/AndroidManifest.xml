@@ -41,6 +41,7 @@
                 <action android:name="com.cooldong.calendar.NEXT" />
                 <action android:name="com.cooldong.calendar.TODAY" />
                 <action android:name="com.cooldong.calendar.REFRESH" />
+                <action android:name="com.cooldong.calendar.CLOCK_TICK" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
