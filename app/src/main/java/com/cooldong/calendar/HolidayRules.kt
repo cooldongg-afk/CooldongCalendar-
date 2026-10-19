@@ -4,8 +4,8 @@ import java.util.Calendar
 
 /** Sunday and Korean public holidays share the same visual style. */
 object HolidayRules {
-    const val SUNDAY_RED: Int = 0xFFD74954.toInt()
-    const val SATURDAY_BLUE: Int = 0xFF2773C5.toInt()
+    val SUNDAY_RED: Int = 0xFFD74954.toInt()
+    val SATURDAY_BLUE: Int = 0xFF2773C5.toInt()
 
     fun dateKey(day: Calendar): Int =
         day.get(Calendar.YEAR) * 10000 +
