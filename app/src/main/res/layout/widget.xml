@@ -96,7 +96,8 @@
             android:layout_height="match_parent"
             android:paddingBottom="4dp"
             android:orientation="horizontal">
-            <Space
+            <TextView
+                android:text=""
                 android:layout_width="31dp"
                 android:layout_height="match_parent" />
         </LinearLayout>
