@@ -1,1 +1,12 @@
-<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" android:id="@+id/root" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="vertical" android:padding="8dp" android:background="#FFFFFFFF"><TextView android:id="@+id/header" android:layout_width="match_parent" android:layout_height="40dp" android:text="Cooldong Calendar" android:textSize="17sp" android:textStyle="bold" android:textColor="#15233A"/><LinearLayout android:id="@+id/columns" android:layout_width="match_parent" android:layout_height="match_parent" android:orientation="horizontal"/></LinearLayout>
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/transparent">
+    <ImageView
+        android:id="@+id/timeline_image"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="fitXY"
+        android:contentDescription="Cooldong Calendar 주간 타임라인 - 눌러서 캘린더 열기" />
+</FrameLayout>
