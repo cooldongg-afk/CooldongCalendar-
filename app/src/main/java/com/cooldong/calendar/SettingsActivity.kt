@@ -21,7 +21,7 @@ import android.widget.Toast
 import java.util.Calendar
 
 class SettingsActivity : Activity() {
-    private val options = listOf(1, 3, 5, 7)
+    private val options = listOf(0, 1, 3, 5, 7)
     private val calendarChecks = LinkedHashMap<Long, CheckBox>()
     private var sources: List<CalendarSource> = emptyList()
 
@@ -134,8 +134,8 @@ class SettingsActivity : Activity() {
         )
         root.addView(label("가로 표시 일수"))
         val days = combo(
-            options.map { it.toString() + "일" },
-            options.indexOf(prefs.getInt("days", 7)).coerceAtLeast(0)
+            options.map { if (it == 0) "자동 · 위젯 크기에 맞춤" else it.toString() + "일" },
+            options.indexOf(prefs.getInt("days", 0)).coerceAtLeast(0)
         )
 
         root.addView(label("세로 시간축 시작"))
@@ -226,6 +226,11 @@ class SettingsActivity : Activity() {
                 val end = (start.clone() as Calendar).apply { add(Calendar.DATE, 38) }
                 val data = CalendarRepository.load(this, start.timeInMillis, end.timeInMillis)
                 val grouped = data.events.groupBy { it.allDay }
+                val counts = data.events.groupingBy { it.calendarId }.eachCount()
+                val sourceBreakdown = data.calendars.joinToString("\n") { source ->
+                    val count = counts[source.id] ?: 0
+                    source.label + " · " + source.account + ": " + count + "건"
+                }
                 val details = "캘린더: " + data.calendars.size + "개 (선택 " +
                     data.selectedCalendarCount + "개)\n" +
                     "전후 약 1개월간 읽어온 일정: " + data.events.size + "건\n" +
@@ -233,6 +238,7 @@ class SettingsActivity : Activity() {
                     "시간 지정 일정: " + (grouped[false]?.size ?: 0) + "건\n" +
                     "표시 시간: " + (fromHour.selectedItemPosition) + ":00 ~ " +
                     (endHour.selectedItemPosition + 1) + ":00\n\n" +
+                    "캘린더별 조회 현황:\n" + sourceBreakdown + "\n\n" +
                     (data.error?.plus("\n\n") ?: "") +
                     "삼성 리마인더, 비공개 앱 내부 일정, 기기에 동기화되지 않은 계정 일정은 " +
                     "Android 캘린더 저장소에서 읽을 수 없습니다.\n" +
