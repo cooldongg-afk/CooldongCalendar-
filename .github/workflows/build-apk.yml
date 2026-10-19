@@ -1,4 +1,4 @@
-name: Build Cooldong Calendar APK
+name: Build Cooldong Calendar unsigned release (private signing needed)
 on:
   push:
     branches: [main]
@@ -40,9 +40,6 @@ jobs:
           ls -la "$ANDROID_HOME/platforms/android-35" || true
           sdkmanager --list_installed | head -65
 
-      - name: Compile debug APK
-        run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
-
       - name: Build unsigned release APK
         run: gradle :app:assembleRelease --stacktrace --no-daemon --console=plain
 
@@ -50,7 +47,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: CooldongCalendar-v1.1.1-unsigned
+          name: CooldongCalendar-UNSIGNED-private-signing-required
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
 
@@ -67,10 +64,3 @@ jobs:
           path: apksigner.jar
           if-no-files-found: error
 
-      - name: Upload debug test APK
-        if: success()
-        uses: actions/upload-artifact@v4
-        with:
-          name: CooldongCalendar-v1.1.1-debug-test-only
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
