@@ -8,6 +8,7 @@ import android.content.Context
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.Color
+import android.net.Uri
 import android.os.Bundle
 import android.view.View
 import android.widget.RemoteViews
@@ -106,6 +107,101 @@ open class CalendarWidget : AppWidgetProvider() {
                 ctx, id * 10 + kind, intent,
                 PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
+        }
+
+        private fun slotActivity(
+            ctx: Context, widgetId: Int, dayIndex: Int, slotIndex: Int,
+            startMillis: Long, endMillis: Long, allDay: Boolean
+        ): PendingIntent {
+            // The data URI distinguishes every tap target to avoid PendingIntent collisions.
+            val target = Intent(ctx, SlotActionActivity::class.java).apply {
+                data = Uri.parse(
+                    "cooldong://slot/" + widgetId + "/" + dayIndex + "/" + slotIndex +
+                        "/" + startMillis
+                )
+                putExtra(SlotActionActivity.EXTRA_START, startMillis)
+                putExtra(SlotActionActivity.EXTRA_END, endMillis)
+                putExtra(SlotActionActivity.EXTRA_ALL_DAY, allDay)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            return PendingIntent.getActivity(
+                ctx, 0, target,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        private fun attachTouchGrid(
+            ctx: Context, widget: RemoteViews, widgetId: Int,
+            firstDay: Calendar, days: Int,
+            firstHour: Int, lastHour: Int, viewHeight: Int
+        ) {
+            val small = viewHeight.coerceIn(140, 1150) < 225
+            val label = if (small) 22f else 29f
+            val allDayLane = if (small) 23f else 34f
+            val usable = (viewHeight.coerceIn(140, 1150) - label - allDayLane - 4f)
+                .coerceAtLeast(20f)
+            val hourHeight = usable / (lastHour - firstHour)
+            // When the widget is tall enough, half-hour touch targets allow finer entry.
+            val slotMinutes = if (hourHeight >= 45f) 30 else 60
+            val period = (lastHour - firstHour) * 60
+            for (d in 0 until days) {
+                val date = (firstDay.clone() as Calendar).apply {
+                    add(Calendar.DATE, d)
+                    set(Calendar.HOUR_OF_DAY, 0)
+                    set(Calendar.MINUTE, 0)
+                    set(Calendar.SECOND, 0)
+                    set(Calendar.MILLISECOND, 0)
+                }
+                val dayEnd = (date.clone() as Calendar).apply {
+                    add(Calendar.DATE, 1)
+                }
+                val dayView = RemoteViews(
+                    ctx.packageName,
+                    if (small) R.layout.touch_day_small else R.layout.touch_day_regular
+                )
+                dayView.setOnClickPendingIntent(
+                    R.id.touch_day_title, activity(ctx, widgetId, false)
+                )
+                dayView.setOnClickPendingIntent(
+                    R.id.touch_all_day,
+                    slotActivity(
+                        ctx, widgetId, d, 999, date.timeInMillis,
+                        dayEnd.timeInMillis, true
+                    )
+                )
+                val startTime = (date.clone() as Calendar).apply {
+                    set(Calendar.HOUR_OF_DAY, firstHour)
+                }
+                var offset = 0
+                var slot = 0
+                while (offset < period) {
+                    val from = (startTime.clone() as Calendar).apply {
+                        add(Calendar.MINUTE, offset)
+                    }
+                    val until = (startTime.clone() as Calendar).apply {
+                        add(Calendar.MINUTE, (offset + slotMinutes).coerceAtMost(period))
+                    }
+                    val hitTarget = RemoteViews(ctx.packageName, R.layout.touch_hour)
+                    hitTarget.setOnClickPendingIntent(
+                        R.id.touch_hour,
+                        slotActivity(
+                            ctx, widgetId, d, slot,
+                            from.timeInMillis, until.timeInMillis, false
+                        )
+                    )
+                    hitTarget.setCharSequence(
+                        R.id.touch_hour, "setContentDescription",
+                        (date.get(Calendar.MONTH) + 1).toString() + "월 " +
+                            date.get(Calendar.DATE) + "일 " +
+                            from.get(Calendar.HOUR_OF_DAY) + "시 " +
+                            from.get(Calendar.MINUTE) + "분 일정 확인 또는 추가"
+                    )
+                    dayView.addView(R.id.touch_hour_grid, hitTarget)
+                    offset += slotMinutes
+                    slot++
+                }
+                widget.addView(R.id.touch_columns, dayView)
+            }
         }
 
         private fun activity(ctx: Context, id: Int, settings: Boolean): PendingIntent {
@@ -210,7 +306,7 @@ open class CalendarWidget : AppWidgetProvider() {
                     view.setOnClickPendingIntent(R.id.nav_settings, activity(ctx, id, true))
                     view.setOnClickPendingIntent(R.id.nav_title, activity(ctx, id, false))
                     view.setOnClickPendingIntent(R.id.timeline_image, activity(ctx, id, false))
-                    val missing = data.events.isEmpty() || data.error != null
+                    val missing = data.error != null || data.selectedCalendarCount == 0
                     view.setViewVisibility(
                         R.id.empty_hint, if (missing) View.VISIBLE else View.GONE
                     )
@@ -226,13 +322,17 @@ open class CalendarWidget : AppWidgetProvider() {
                         if (width < 270) View.GONE else View.VISIBLE
                     )
 
+                    val renderedHeight = (height - 39).coerceAtLeast(130)
                     val bitmap = TimelineRenderer.render(
-                        ctx, width, (height - 39).coerceAtLeast(130), day, days,
+                        ctx, width, renderedHeight, day, days,
                         startHour, endHour, alphaPercent,
                         prefs.getBoolean("times", true),
-                        data.events
+                        data.events, data.holidayKeys
                     )
                     view.setImageViewBitmap(R.id.timeline_image, bitmap)
+                    attachTouchGrid(
+                        ctx, view, id, day, days, startHour, endHour, renderedHeight
+                    )
                     manager.updateAppWidget(id, view)
                 } catch (_: Exception) {
                     val fallback = RemoteViews(ctx.packageName, R.layout.widget)
