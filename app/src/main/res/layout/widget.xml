@@ -79,11 +79,29 @@
             android:contentDescription="위젯 설정" />
     </LinearLayout>
 
-    <ImageView
-        android:id="@+id/timeline_image"
+    <FrameLayout
         android:layout_width="match_parent"
         android:layout_height="0dp"
-        android:layout_weight="1"
-        android:scaleType="fitXY"
-        android:contentDescription="주간 일정 타임라인. 누르면 삼성 캘린더가 열립니다." />
+        android:layout_weight="1">
+        <ImageView
+            android:id="@+id/timeline_image"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:scaleType="fitXY"
+            android:contentDescription="주간 일정 타임라인. 누르면 삼성 캘린더가 열립니다." />
+
+        <TextView
+            android:id="@+id/empty_hint"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:layout_margin="16dp"
+            android:padding="12dp"
+            android:gravity="center"
+            android:background="#EAF4F8FD"
+            android:text="표시할 일정이 없습니다. 설정에서 캘린더를 선택하세요."
+            android:textColor="#2D4865"
+            android:textSize="12sp"
+            android:visibility="gone" />
+    </FrameLayout>
 </LinearLayout>
