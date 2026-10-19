@@ -160,7 +160,8 @@ object TimelineRenderer {
         val hasAllDay = events.any {
             it.allDay && utcKey(it.begin) <= lastDate && utcKey(it.end - 1L) >= firstDate
         }
-        val allDayH = if (!hasAllDay) 5f else if (small) 22f else 37f
+        // Keep a tappable all-day lane even when no all-day event exists.
+        val allDayH = if (small) 23f else 34f
         val gridTop = topH + labelH + allDayH
         val gridBottom = h - 4f
         val gridH = max(20f, gridBottom - gridTop)
@@ -207,6 +208,7 @@ object TimelineRenderer {
             stroke(canvas, x, topH, x, gridBottom, 0x668D9BAA, 0.75f)
         }
         stroke(canvas, gutter, topH + labelH, w, topH + labelH, 0x668D9BAA)
+        text(canvas, "종일", 3f, topH + labelH + 15f, 9f, 0xFF61758B.toInt())
 
         for (d in 0 until days) {
             if (!hasAllDay) break
