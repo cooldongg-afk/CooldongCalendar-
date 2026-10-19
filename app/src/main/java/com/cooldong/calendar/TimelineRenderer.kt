@@ -141,28 +141,22 @@ object TimelineRenderer {
         rounded(canvas, RectF(0f, 0f, w, h), Color.argb(alpha, 255, 255, 255), 7f)
 
         val small = h < 225f
-        val topH = if (small) 27f else 34f
-        val labelH = if (small) 23f else 29f
+        // The native widget toolbar contains the date and navigation controls.
+        // Drawing another header into the bitmap would waste valuable row space.
+        val topH = 0f
+        val labelH = if (small) 22f else 29f
         val gutter = if (days >= 7 || w < 230f) 31f else 37f
         val contentW = w - gutter - 3f
         val dayW = contentW / days
-        val beginDay = start.clone() as Calendar
-        val finishDay = start.clone() as Calendar
-        finishDay.add(Calendar.DATE, days - 1)
-        val rangeText = (beginDay.get(Calendar.MONTH) + 1).toString() + "/" +
-            beginDay.get(Calendar.DATE) + " ~ " + (finishDay.get(Calendar.MONTH) + 1) +
-            "/" + finishDay.get(Calendar.DATE)
-        val headerAlpha = max(65, alpha)
-        rounded(canvas, RectF(0f, 0f, w, topH), Color.argb(headerAlpha, 22, 34, 51), 5f)
-        text(canvas, rangeText, 9f, topH * 0.68f, if (w < 250f) 12.5f else 16f, Color.WHITE, true)
-        val rightText = days.toString() + "일"
-        text(canvas, rightText, w - 30f, topH * 0.68f, 10f, 0xFFDAE6F7.toInt())
-        stroke(canvas, 0f, topH, w, topH, 0x4491A0B5, 0.5f)
 
         val dayDates = (0 until days).map { offset ->
             (start.clone() as Calendar).apply { add(Calendar.DATE, offset) }
         }
-        val hasAllDay = events.any { it.allDay }
+        val firstDate = dateKey(dayDates.first())
+        val lastDate = dateKey(dayDates.last())
+        val hasAllDay = events.any {
+            it.allDay && utcKey(it.begin) <= lastDate && utcKey(it.end - 1L) >= firstDate
+        }
         val allDayH = if (!hasAllDay) 5f else if (small) 22f else 37f
         val gridTop = topH + labelH + allDayH
         val gridBottom = h - 4f
