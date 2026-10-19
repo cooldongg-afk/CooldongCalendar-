@@ -1,0 +1,1 @@
+Compile verification of Cooldong Calendar v1.2 with native Android event editor and Korean holiday colors.
