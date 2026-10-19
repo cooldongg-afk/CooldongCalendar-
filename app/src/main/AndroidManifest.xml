@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
     <uses-permission android:name="android.permission.READ_CALENDAR" />
+
     <queries>
         <package android:name="com.samsung.android.calendar" />
         <intent>
@@ -8,24 +10,60 @@
             <category android:name="android.intent.category.APP_CALENDAR" />
         </intent>
     </queries>
+
     <application
         android:theme="@android:style/Theme.Material.Light.NoActionBar"
         android:label="Cooldong Calendar"
         android:allowBackup="true">
+
         <activity android:name=".SettingsActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
-        <receiver android:name=".CalendarWidget" android:exported="true">
+
+        <receiver
+            android:name=".CalendarWidget"
+            android:label="Cooldong · 표준 일정 위젯"
+            android:exported="true">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
                 <action android:name="android.intent.action.DATE_CHANGED" />
                 <action android:name="android.intent.action.TIME_SET" />
                 <action android:name="android.intent.action.TIMEZONE_CHANGED" />
+                <action android:name="com.cooldong.calendar.PREV" />
+                <action android:name="com.cooldong.calendar.NEXT" />
+                <action android:name="com.cooldong.calendar.TODAY" />
+                <action android:name="com.cooldong.calendar.REFRESH" />
             </intent-filter>
-            <meta-data android:name="android.appwidget.provider" android:resource="@xml/widget_info" />
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_info" />
+        </receiver>
+
+        <receiver
+            android:name=".CompactCalendarWidget"
+            android:label="Cooldong · 소형 일정 위젯"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_compact" />
+        </receiver>
+
+        <receiver
+            android:name=".ExpandedCalendarWidget"
+            android:label="Cooldong · 대형 일정 위젯"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/widget_expanded" />
         </receiver>
     </application>
 </manifest>
