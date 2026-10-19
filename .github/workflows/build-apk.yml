@@ -54,12 +54,17 @@ jobs:
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
 
+      - name: Prepare local signing utility
+        run: |
+          test -f "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar"
+          cp "$ANDROID_HOME/build-tools/35.0.0/lib/apksigner.jar" ./apksigner.jar
+
       - name: Upload Android signing utility
         if: success()
         uses: actions/upload-artifact@v4
         with:
           name: Android-apksigner-tool-internal
-          path: ${{ env.ANDROID_HOME }}/build-tools/35.0.0/lib/apksigner.jar
+          path: apksigner.jar
           if-no-files-found: error
 
       - name: Upload debug test APK
