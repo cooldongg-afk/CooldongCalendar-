@@ -88,7 +88,18 @@
             android:layout_width="match_parent"
             android:layout_height="match_parent"
             android:scaleType="fitXY"
-            android:contentDescription="주간 일정 타임라인. 누르면 삼성 캘린더가 열립니다." />
+            android:contentDescription="주간 일정 타임라인. 날짜별 시간칸을 눌러 일정을 확인하거나 추가합니다." />
+
+        <LinearLayout
+            android:id="@+id/touch_columns"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:paddingBottom="4dp"
+            android:orientation="horizontal">
+            <Space
+                android:layout_width="31dp"
+                android:layout_height="match_parent" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/empty_hint"
