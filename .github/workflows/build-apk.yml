@@ -47,7 +47,7 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: CooldongCalendar-UNSIGNED-private-signing-required
+          name: CooldongCalendar-v1.2-UNSIGNED-private-signing-required
           path: app/build/outputs/apk/release/app-release-unsigned.apk
           if-no-files-found: error
 
