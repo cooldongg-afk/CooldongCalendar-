@@ -43,10 +43,29 @@ jobs:
       - name: Compile debug APK
         run: gradle :app:assembleDebug --stacktrace --no-daemon --console=plain
 
-      - name: Upload APK
+      - name: Build unsigned release APK
+        run: gradle :app:assembleRelease --stacktrace --no-daemon --console=plain
+
+      - name: Upload unsigned release for private signing
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: CooldongCalendar-v1-debug
+          name: CooldongCalendar-v1.1.1-unsigned
+          path: app/build/outputs/apk/release/app-release-unsigned.apk
+          if-no-files-found: error
+
+      - name: Upload Android signing utility
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Android-apksigner-tool-internal
+          path: ${{ env.ANDROID_HOME }}/build-tools/35.0.0/lib/apksigner.jar
+          if-no-files-found: error
+
+      - name: Upload debug test APK
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: CooldongCalendar-v1.1.1-debug-test-only
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
