@@ -40,17 +40,49 @@ data class TimelineMetrics(
 }
 
 object TimelineLayout {
+    /**
+     * Keep the bitmap and the RemoteViews tap overlay in exactly the same coordinate
+     * system, including the height of the all-day strip.
+     */
+    fun containsVisibleAllDay(
+        firstDay: Calendar, days: Int, events: List<CalendarEvent>
+    ): Boolean {
+        val startKey = HolidayRules.dateKey(firstDay)
+        val finalDay = (firstDay.clone() as Calendar).apply {
+            add(Calendar.DATE, days - 1)
+        }
+        val endKey = HolidayRules.dateKey(finalDay)
+        val utc = java.util.TimeZone.getTimeZone("UTC")
+        return events.any { event ->
+            if (!event.allDay) return@any false
+            val startDate = Calendar.getInstance(utc).apply {
+                timeInMillis = event.begin
+            }
+            val endDate = Calendar.getInstance(utc).apply {
+                timeInMillis = event.end - 1L
+            }
+            HolidayRules.dateKey(startDate) <= endKey &&
+                HolidayRules.dateKey(endDate) >= startKey
+        }
+    }
+
     fun metrics(
         widthDp: Int, heightDp: Int, days: Int,
-        firstHour: Int, lastHour: Int
+        firstHour: Int, lastHour: Int,
+        hasVisibleAllDay: Boolean = false
     ): TimelineMetrics {
         val width = widthDp.coerceIn(135, 950).toFloat()
         val height = heightDp.coerceIn(140, 1150).toFloat()
         val small = height < 225f
+        val expandedAllDay = !small && height >= 320f && hasVisibleAllDay
         return TimelineMetrics(
             width, height, days, firstHour, lastHour,
             if (small) 22f else 29f,
-            if (small) 23f else 34f
+            when {
+                small -> 23f
+                expandedAllDay -> 56f
+                else -> 34f
+            }
         )
     }
 
@@ -102,7 +134,10 @@ object TimelineLayout {
         firstHour: Int, lastHour: Int,
         events: List<CalendarEvent>
     ): List<EventCard> {
-        val metrics = metrics(widthDp, heightDp, days, firstHour, lastHour)
+        val metrics = metrics(
+            widthDp, heightDp, days, firstHour, lastHour,
+            containsVisibleAllDay(firstDay, days, events)
+        )
         val result = ArrayList<EventCard>()
         for (d in 0 until days) {
             val date = (firstDay.clone() as Calendar).apply { add(Calendar.DATE, d) }
