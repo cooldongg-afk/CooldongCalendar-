@@ -242,8 +242,18 @@ open class CalendarWidget : AppWidgetProvider() {
                     for (lane in 0 until count) {
                         val x = metrics.gutter + d * metrics.dayWidth +
                             (lane + 0.5f) * metrics.dayWidth / count
-                        val matching = relevant.filter {
-                            it.rect.left <= x && x <= it.rect.right
+                        val hitAtX = relevant.filter {
+                            it.rect.left - 1.5f <= x && x <= it.rect.right + 1.5f
+                        }
+                        // The bitmap and the transparent Android RemoteViews
+                        // overlay can be scaled slightly differently by One UI.
+                        // When only one event occupies this row, it must win
+                        // even if the computed horizontal center is a few
+                        // pixels outside its painted rectangle.
+                        val matching = if (hitAtX.isEmpty() && relevant.size == 1) {
+                            relevant
+                        } else {
+                            hitAtX
                         }
                         // If a card's label has been enlarged into free time,
                         // tapping any part of that enlarged card still edits it.
