@@ -148,7 +148,7 @@ object TimelineRenderer {
         // Drawing another header into the bitmap would waste valuable row space.
         val topH = 0f
         val labelH = if (small) 22f else 29f
-        val gutter = if (days >= 7 || w < 230f) 31f else 37f
+        val gutter = 31f
         val contentW = w - gutter - 3f
         val dayW = contentW / days
 
