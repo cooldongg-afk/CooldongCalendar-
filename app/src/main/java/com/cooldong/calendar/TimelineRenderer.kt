@@ -22,7 +22,8 @@ data class CalendarEvent(
     val end: Long,
     val allDay: Boolean,
     val color: Int,
-    val calendarId: Long = -1L
+    val calendarId: Long = -1L,
+    val eventId: Long = -1L
 )
 
 object TimelineRenderer {
@@ -128,7 +129,8 @@ object TimelineRenderer {
         start: Calendar, days: Int,
         startHour: Int, endHour: Int,
         transparency: Int, showTimes: Boolean,
-        events: List<CalendarEvent>
+        events: List<CalendarEvent>,
+        holidayKeys: Set<Int> = emptySet()
     ): Bitmap {
         val w = widthDp.coerceIn(135, 950).toFloat()
         val h = heightDp.coerceIn(140, 1150).toFloat()
@@ -170,7 +172,20 @@ object TimelineRenderer {
         for (d in 0 until days) {
             val day = dayDates[d]
             val x = gutter + d * dayW
-            if (d % 2 == 1 && alpha > 0) canvas.drawRect(x, topH, x + dayW, gridBottom, fill)
+            val publicHoliday = HolidayRules.fixedKoreanHoliday(day) ||
+                holidayKeys.contains(HolidayRules.dateKey(day))
+            val sunday = day.get(Calendar.DAY_OF_WEEK) == Calendar.SUNDAY
+            val saturday = day.get(Calendar.DAY_OF_WEEK) == Calendar.SATURDAY
+            if (sunday || publicHoliday) {
+                fill.color = Color.argb((alpha * 0.19f).toInt(), 245, 110, 123)
+                canvas.drawRect(x, topH, x + dayW, gridBottom, fill)
+            } else if (saturday) {
+                fill.color = Color.argb((alpha * 0.16f).toInt(), 85, 152, 236)
+                canvas.drawRect(x, topH, x + dayW, gridBottom, fill)
+            } else if (d % 2 == 1 && alpha > 0) {
+                fill.color = Color.argb(max(0, alpha / 3), 225, 232, 240)
+                canvas.drawRect(x, topH, x + dayW, gridBottom, fill)
+            }
             val today = Calendar.getInstance()
             val isToday = dateKey(day) == dateKey(today)
             val name = if (days == 1) {
@@ -184,7 +199,11 @@ object TimelineRenderer {
             }
             text(canvas, name, x + 3f, topH + labelH * 0.68f,
                 min(12f, max(8.3f, dayW / 5.5f)),
-                if (isToday) 0xFFD4433B.toInt() else 0xFF25374A.toInt(), isToday)
+                when {
+                    sunday || publicHoliday -> HolidayRules.SUNDAY_RED
+                    saturday -> HolidayRules.SATURDAY_BLUE
+                    else -> 0xFF25374A.toInt()
+                }, isToday || sunday || saturday || publicHoliday)
             stroke(canvas, x, topH, x, gridBottom, 0x668D9BAA, 0.75f)
         }
         stroke(canvas, gutter, topH + labelH, w, topH + labelH, 0x668D9BAA)
