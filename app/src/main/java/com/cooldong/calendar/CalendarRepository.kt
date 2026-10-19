@@ -147,7 +147,8 @@ object CalendarRepository {
                             begin,
                             end,
                             cursor.getInt(3) != 0,
-                            color
+                            color,
+                            calendarId
                         )
                     )
                 }
