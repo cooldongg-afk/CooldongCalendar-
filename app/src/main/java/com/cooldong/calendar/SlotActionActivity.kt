@@ -93,7 +93,6 @@ class SlotActionActivity : Activity() {
         }
         AlertDialog.Builder(this)
             .setTitle(title)
-            .setMessage("기존 일정을 선택하면 삼성 캘린더에서 수정·삭제할 수 있습니다.")
             .setItems(choices.toTypedArray()) { _, which ->
                 if (which == 0) {
                     insertEvent(start, end, allDay)
