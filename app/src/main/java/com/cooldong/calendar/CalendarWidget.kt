@@ -1,153 +1,227 @@
 package com.cooldong.calendar
 
-import android.Manifest
 import android.app.PendingIntent
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
 import android.content.ComponentName
-import android.content.ContentUris
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Color
-import android.net.Uri
 import android.os.Bundle
-import android.provider.CalendarContract
+import android.view.View
 import android.widget.RemoteViews
 import java.util.Calendar
 
-class CalendarWidget : AppWidgetProvider() {
+/** Multiple widget sizes share navigation, actions and calendar data. */
+open class CalendarWidget : AppWidgetProvider() {
     override fun onUpdate(context: Context, manager: AppWidgetManager, ids: IntArray) {
         updateAll(context, manager, ids)
     }
 
     override fun onAppWidgetOptionsChanged(
-        context: Context, manager: AppWidgetManager,
-        appWidgetId: Int, newOptions: Bundle
+        context: Context,
+        manager: AppWidgetManager,
+        appWidgetId: Int,
+        newOptions: Bundle
     ) {
         super.onAppWidgetOptionsChanged(context, manager, appWidgetId, newOptions)
         updateAll(context, manager, intArrayOf(appWidgetId))
     }
 
+    override fun onDeleted(context: Context, appWidgetIds: IntArray) {
+        val editor = context.getSharedPreferences("settings", Context.MODE_PRIVATE).edit()
+        appWidgetIds.forEach { editor.remove("offsetDays_" + it) }
+        editor.apply()
+        super.onDeleted(context, appWidgetIds)
+    }
+
     override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
-        if (intent.action == Intent.ACTION_DATE_CHANGED ||
-            intent.action == Intent.ACTION_TIME_CHANGED ||
-            intent.action == Intent.ACTION_TIMEZONE_CHANGED
-        ) {
-            val manager = AppWidgetManager.getInstance(context)
-            val ids = manager.getAppWidgetIds(ComponentName(context, CalendarWidget::class.java))
-            updateAll(context, manager, ids)
+        when (intent.action) {
+            ACTION_PREV, ACTION_NEXT, ACTION_TODAY, ACTION_REFRESH -> {
+                val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
+                if (id == -1) return
+                val prefs = context.getSharedPreferences("settings", Context.MODE_PRIVATE)
+                val stride = prefs.getInt("days", 7).coerceIn(1, 7)
+                val key = "offsetDays_" + id
+                val current = prefs.getInt(key, 0)
+                val next = when (intent.action) {
+                    ACTION_PREV -> (current - stride).coerceIn(-3650, 3650)
+                    ACTION_NEXT -> (current + stride).coerceIn(-3650, 3650)
+                    ACTION_TODAY -> 0
+                    else -> current
+                }
+                prefs.edit().putInt(key, next).apply()
+                updateAll(context, AppWidgetManager.getInstance(context), intArrayOf(id))
+                return
+            }
+            Intent.ACTION_DATE_CHANGED, Intent.ACTION_TIME_CHANGED,
+            Intent.ACTION_TIMEZONE_CHANGED -> refreshInstalledWidgets(context)
         }
+        super.onReceive(context, intent)
     }
 
     companion object {
-        private const val SAMSUNG_CALENDAR = "com.samsung.android.calendar"
+        const val ACTION_PREV = "com.cooldong.calendar.PREV"
+        const val ACTION_NEXT = "com.cooldong.calendar.NEXT"
+        const val ACTION_TODAY = "com.cooldong.calendar.TODAY"
+        const val ACTION_REFRESH = "com.cooldong.calendar.REFRESH"
 
-        fun openCalendarIntent(ctx: Context): Intent {
-            val samsung = Intent(Intent.ACTION_MAIN).apply {
-                addCategory(Intent.CATEGORY_APP_CALENDAR)
-                setPackage(SAMSUNG_CALENDAR)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        private val widgetClasses: List<Class<out AppWidgetProvider>> = listOf(
+            CalendarWidget::class.java,
+            CompactCalendarWidget::class.java,
+            ExpandedCalendarWidget::class.java
+        )
+
+        fun refreshInstalledWidgets(ctx: Context) {
+            val manager = AppWidgetManager.getInstance(ctx)
+            val ids = widgetClasses.flatMap {
+                manager.getAppWidgetIds(ComponentName(ctx, it)).toList()
+            }.distinct().toIntArray()
+            updateAll(ctx, manager, ids)
+        }
+
+        private fun broadcast(ctx: Context, id: Int, action: String, kind: Int): PendingIntent {
+            val intent = Intent(ctx, CalendarWidget::class.java).apply {
+                this.action = action
+                putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, id)
             }
-            if (samsung.resolveActivity(ctx.packageManager) != null) return samsung
+            return PendingIntent.getBroadcast(
+                ctx, id * 10 + kind, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        private fun activity(ctx: Context, id: Int, settings: Boolean): PendingIntent {
+            val intent = if (settings) {
+                Intent(ctx, SettingsActivity::class.java)
+            } else {
+                openSamsungCalendar(ctx)
+            }
+            intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            return PendingIntent.getActivity(
+                ctx, id * 10 + if (settings) 8 else 9, intent,
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+            )
+        }
+
+        private fun openSamsungCalendar(ctx: Context): Intent {
+            val samsung = ctx.packageManager.getLaunchIntentForPackage("com.samsung.android.calendar")
+            if (samsung != null) return samsung
             return Intent(Intent.ACTION_MAIN).apply {
                 addCategory(Intent.CATEGORY_APP_CALENDAR)
-                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-            }
+                setPackage("com.samsung.android.calendar")
+            }.takeIf { it.resolveActivity(ctx.packageManager) != null }
+                ?: Intent(Intent.ACTION_MAIN).apply {
+                    addCategory(Intent.CATEGORY_APP_CALENDAR)
+                }
         }
 
         fun updateAll(ctx: Context, manager: AppWidgetManager, ids: IntArray) {
             if (ids.isEmpty()) return
             val prefs = ctx.getSharedPreferences("settings", Context.MODE_PRIVATE)
             val days = prefs.getInt("days", 7).coerceIn(1, 7)
-            val startHour = prefs.getInt("startHour", 7).coerceIn(0, 23)
-            val endHour = prefs.getInt("endHour", 22).coerceIn(startHour + 1, 24)
-            val transparency = prefs.getInt("transparency", 0)
-            val showTimes = prefs.getBoolean("times", true)
-            val start = Calendar.getInstance().apply {
+            val basis = prefs.getInt("basis", 0)
+            val first = Calendar.getInstance().apply {
                 set(Calendar.HOUR_OF_DAY, 0)
                 set(Calendar.MINUTE, 0)
                 set(Calendar.SECOND, 0)
                 set(Calendar.MILLISECOND, 0)
-                when (prefs.getInt("basis", 0)) {
-                    0 -> {
-                        val mondayOffset = (get(Calendar.DAY_OF_WEEK) + 5) % 7
-                        add(Calendar.DAY_OF_MONTH, -mondayOffset)
-                    }
-                    2 -> {
-                        val sundayOffset = get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY
-                        add(Calendar.DAY_OF_MONTH, -sundayOffset)
-                    }
+                when (basis) {
+                    0 -> add(Calendar.DATE, -((get(Calendar.DAY_OF_WEEK) + 5) % 7))
+                    2 -> add(Calendar.DATE, -(get(Calendar.DAY_OF_WEEK) - Calendar.SUNDAY))
                 }
             }
-            val rangeEnd = (start.clone() as Calendar).apply { add(Calendar.DATE, days + 2) }
-            val rangeBegin = (start.clone() as Calendar).apply { add(Calendar.DATE, -2) }
-            val events = readEvents(ctx, rangeBegin.timeInMillis, rangeEnd.timeInMillis)
-            for (id in ids) {
-                val options = manager.getAppWidgetOptions(id)
-                val landscape = ctx.resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-                val width = options.getInt(
-                    if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH
-                    else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 320
-                ).coerceAtLeast(135)
-                val height = options.getInt(
-                    if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT
-                    else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 350
-                ).coerceAtLeast(140)
-                val bitmap = TimelineRenderer.render(
-                    ctx, width, height, start, days, startHour, endHour,
-                    transparency, showTimes, events
-                )
-                val views = RemoteViews(ctx.packageName, R.layout.widget)
-                views.setImageViewBitmap(R.id.timeline_image, bitmap)
-                val launch = openCalendarIntent(ctx)
-                val click = PendingIntent.getActivity(
-                    ctx, id, launch,
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
-                )
-                views.setOnClickPendingIntent(R.id.timeline_image, click)
-                manager.updateAppWidget(id, views)
-            }
-        }
+            val startHour = prefs.getInt("startHour", 7).coerceIn(0, 23)
+            val endHour = prefs.getInt("endHour", 22).coerceIn(startHour + 1, 24)
+            val alphaPercent = prefs.getInt("transparency", 0).coerceIn(0, 100)
+            val backgroundAlpha = (255 * (100 - alphaPercent) / 100f).toInt()
+            val landscape = ctx.resources.configuration.orientation ==
+                Configuration.ORIENTATION_LANDSCAPE
 
-        private fun readEvents(ctx: Context, from: Long, to: Long): List<CalendarEvent> {
-            if (ctx.checkSelfPermission(Manifest.permission.READ_CALENDAR) != PackageManager.PERMISSION_GRANTED) {
-                return emptyList()
-            }
-            val uri = CalendarContract.Instances.CONTENT_URI.buildUpon().apply {
-                ContentUris.appendId(this, from)
-                ContentUris.appendId(this, to)
-            }.build()
-            val columns = arrayOf(
-                CalendarContract.Instances.TITLE,
-                CalendarContract.Instances.BEGIN,
-                CalendarContract.Instances.END,
-                CalendarContract.Instances.ALL_DAY,
-                CalendarContract.Instances.DISPLAY_COLOR
-            )
-            val items = ArrayList<CalendarEvent>()
-            try {
-                ctx.contentResolver.query(
-                    uri, columns, null, null,
-                    CalendarContract.Instances.BEGIN + " ASC"
-                )?.use { cursor ->
-                    while (cursor.moveToNext() && items.size < 900) {
-                        val title = cursor.getString(0) ?: "일정"
-                        val begin = cursor.getLong(1)
-                        val end = cursor.getLong(2).coerceAtLeast(begin + 60000L)
-                        val allDay = cursor.getInt(3) == 1
-                        val rawColor = if (cursor.isNull(4)) 0 else cursor.getInt(4)
-                        val color = if (rawColor == Color.TRANSPARENT) 0xFF2874C8.toInt()
-                            else Color.rgb(Color.red(rawColor), Color.green(rawColor), Color.blue(rawColor))
-                        items.add(CalendarEvent(title, begin, end, allDay, color))
+            for (id in ids) {
+                try {
+                    val day = (first.clone() as Calendar).apply {
+                        add(Calendar.DATE, prefs.getInt("offsetDays_" + id, 0))
                     }
+                    val finalDay = (day.clone() as Calendar).apply {
+                        add(Calendar.DATE, days - 1)
+                    }
+                    val data = CalendarRepository.loadPeriod(ctx, day, days)
+                    val options = manager.getAppWidgetOptions(id)
+                    val width = options.getInt(
+                        if (landscape) AppWidgetManager.OPTION_APPWIDGET_MAX_WIDTH
+                        else AppWidgetManager.OPTION_APPWIDGET_MIN_WIDTH, 310
+                    ).coerceAtLeast(140)
+                    val height = options.getInt(
+                        if (landscape) AppWidgetManager.OPTION_APPWIDGET_MIN_HEIGHT
+                        else AppWidgetManager.OPTION_APPWIDGET_MAX_HEIGHT, 350
+                    ).coerceAtLeast(160)
+
+                    val view = RemoteViews(ctx.packageName, R.layout.widget)
+                    view.setInt(
+                        R.id.widget_root, "setBackgroundColor",
+                        Color.argb(backgroundAlpha, 255, 255, 255)
+                    )
+                    view.setInt(
+                        R.id.widget_toolbar, "setBackgroundColor",
+                        Color.argb(240, 25, 36, 53)
+                    )
+                    val head = if (days == 1) {
+                        (day.get(Calendar.MONTH) + 1).toString() + "/" + day.get(Calendar.DATE)
+                    } else {
+                        (day.get(Calendar.MONTH) + 1).toString() + "/" + day.get(Calendar.DATE) +
+                            "–" + (finalDay.get(Calendar.MONTH) + 1) + "/" + finalDay.get(Calendar.DATE)
+                    }
+                    view.setTextViewText(
+                        R.id.nav_title, if (data.error != null) "⚠ " + head else head
+                    )
+                    view.setTextViewText(
+                        R.id.nav_today, if (prefs.getInt("offsetDays_" + id, 0) == 0) "오늘" else "↩"
+                    )
+                    view.setOnClickPendingIntent(
+                        R.id.nav_prev, broadcast(ctx, id, ACTION_PREV, 1)
+                    )
+                    view.setOnClickPendingIntent(
+                        R.id.nav_next, broadcast(ctx, id, ACTION_NEXT, 2)
+                    )
+                    view.setOnClickPendingIntent(
+                        R.id.nav_today, broadcast(ctx, id, ACTION_TODAY, 3)
+                    )
+                    view.setOnClickPendingIntent(
+                        R.id.nav_refresh, broadcast(ctx, id, ACTION_REFRESH, 4)
+                    )
+                    view.setOnClickPendingIntent(R.id.nav_settings, activity(ctx, id, true))
+                    view.setOnClickPendingIntent(R.id.nav_title, activity(ctx, id, false))
+                    view.setOnClickPendingIntent(R.id.timeline_image, activity(ctx, id, false))
+                    view.setViewVisibility(
+                        R.id.nav_refresh,
+                        if (width < 270) View.GONE else View.VISIBLE
+                    )
+
+                    val bitmap = TimelineRenderer.render(
+                        ctx, width, (height - 39).coerceAtLeast(130), day, days,
+                        startHour, endHour, alphaPercent,
+                        prefs.getBoolean("times", true),
+                        data.events
+                    )
+                    view.setImageViewBitmap(R.id.timeline_image, bitmap)
+                    manager.updateAppWidget(id, view)
+                } catch (_: Exception) {
+                    val fallback = RemoteViews(ctx.packageName, R.layout.widget)
+                    fallback.setTextViewText(R.id.nav_title, "일정 표시 오류 · 설정 확인")
+                    fallback.setOnClickPendingIntent(
+                        R.id.nav_settings, activity(ctx, id, true)
+                    )
+                    fallback.setOnClickPendingIntent(
+                        R.id.nav_refresh, broadcast(ctx, id, ACTION_REFRESH, 4)
+                    )
+                    manager.updateAppWidget(id, fallback)
                 }
-            } catch (_: Exception) {
-                // The widget remains usable if the calendar provider is temporarily unavailable.
             }
-            return items
         }
     }
 }
+
+class CompactCalendarWidget : CalendarWidget()
+class ExpandedCalendarWidget : CalendarWidget()
