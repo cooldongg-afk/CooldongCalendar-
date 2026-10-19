@@ -35,10 +35,20 @@ open class CalendarWidget : AppWidgetProvider() {
         appWidgetIds.forEach { editor.remove("offsetDays_" + it) }
         editor.apply()
         super.onDeleted(context, appWidgetIds)
+        TimelineRefresh.cancelIfUnused(context)
+    }
+
+    override fun onDisabled(context: Context) {
+        super.onDisabled(context)
+        TimelineRefresh.cancelIfUnused(context)
     }
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
+            TimelineRefresh.ACTION_CLOCK_TICK -> {
+                refreshInstalledWidgets(context)
+                return
+            }
             ACTION_PREV, ACTION_NEXT, ACTION_TODAY, ACTION_REFRESH -> {
                 val id = intent.getIntExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, -1)
                 if (id == -1) return
@@ -439,6 +449,9 @@ open class CalendarWidget : AppWidgetProvider() {
                     manager.updateAppWidget(id, fallback)
                 }
             }
+            // Every visible widget shares the same scheduled refresh alarm.
+            // It runs only while at least one Cooldong widget is installed.
+            TimelineRefresh.schedule(ctx)
         }
     }
 }
