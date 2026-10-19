@@ -1,0 +1,1 @@
+Temporary v1.4.3 verification: view existing Samsung Calendar event by ID instead of ACTION_EDIT; safe chooser if touch rectangle mismatches; no signing key stored here.
