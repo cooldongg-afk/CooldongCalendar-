@@ -111,17 +111,25 @@ open class CalendarWidget : AppWidgetProvider() {
 
         private fun slotActivity(
             ctx: Context, widgetId: Int, dayIndex: Int, slotIndex: Int,
-            startMillis: Long, endMillis: Long, allDay: Boolean
+            startMillis: Long, endMillis: Long, allDay: Boolean,
+            event: CalendarEvent? = null, laneIndex: Int = 0
         ): PendingIntent {
-            // The data URI distinguishes every tap target to avoid PendingIntent collisions.
+            // Include lane and event ID in the identity: otherwise Android can
+            // reuse a PendingIntent from a previously rendered empty time slot.
+            val eventId = event?.eventId ?: -1L
             val target = Intent(ctx, SlotActionActivity::class.java).apply {
                 data = Uri.parse(
-                    "cooldong://slot/" + widgetId + "/" + dayIndex + "/" + slotIndex +
-                        "/" + startMillis
+                    "cooldong://slot/" + widgetId + "/" + dayIndex + "/" +
+                        slotIndex + "/" + laneIndex + "/" + eventId + "/" + startMillis
                 )
                 putExtra(SlotActionActivity.EXTRA_START, startMillis)
                 putExtra(SlotActionActivity.EXTRA_END, endMillis)
                 putExtra(SlotActionActivity.EXTRA_ALL_DAY, allDay)
+                if (event != null && event.eventId > 0L) {
+                    putExtra(SlotActionActivity.EXTRA_EVENT_ID, event.eventId)
+                    putExtra(SlotActionActivity.EXTRA_EVENT_START, event.begin)
+                    putExtra(SlotActionActivity.EXTRA_EVENT_END, event.end)
+                }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
             return PendingIntent.getActivity(
@@ -133,17 +141,22 @@ open class CalendarWidget : AppWidgetProvider() {
         private fun attachTouchGrid(
             ctx: Context, widget: RemoteViews, widgetId: Int,
             firstDay: Calendar, days: Int,
-            firstHour: Int, lastHour: Int, viewHeight: Int
+            firstHour: Int, lastHour: Int,
+            viewWidth: Int, viewHeight: Int,
+            events: List<CalendarEvent>
         ) {
+            val metrics = TimelineLayout.metrics(
+                viewWidth, viewHeight, days, firstHour, lastHour
+            )
             val small = viewHeight.coerceIn(140, 1150) < 225
-            val label = if (small) 22f else 29f
-            val allDayLane = if (small) 23f else 34f
-            val usable = (viewHeight.coerceIn(140, 1150) - label - allDayLane - 4f)
-                .coerceAtLeast(20f)
-            val hourHeight = usable / (lastHour - firstHour)
-            // When the widget is tall enough, half-hour touch targets allow finer entry.
-            val slotMinutes = if (hourHeight >= 45f) 30 else 60
+            val hourHeight = metrics.hourHeight
+            val slotMinutes = if (hourHeight >= 43f) 30 else 60
             val period = (lastHour - firstHour) * 60
+            val cards = TimelineLayout.cards(
+                viewWidth, viewHeight, firstDay,
+                days, firstHour, lastHour, events
+            ).groupBy { it.dayIndex }
+
             for (d in 0 until days) {
                 val date = (firstDay.clone() as Calendar).apply {
                     add(Calendar.DATE, d)
@@ -162,16 +175,31 @@ open class CalendarWidget : AppWidgetProvider() {
                 dayView.setOnClickPendingIntent(
                     R.id.touch_day_title, activity(ctx, widgetId, false)
                 )
+                val utc = java.util.TimeZone.getTimeZone("UTC")
+                val dayKey = HolidayRules.dateKey(date)
+                val dayAllDay = events.filter { event ->
+                    if (!event.allDay) false else {
+                        val begin = Calendar.getInstance(utc).apply {
+                            timeInMillis = event.begin
+                        }
+                        val finish = Calendar.getInstance(utc).apply {
+                            timeInMillis = event.end - 1L
+                        }
+                        dayKey in HolidayRules.dateKey(begin)..HolidayRules.dateKey(finish)
+                    }
+                }
                 dayView.setOnClickPendingIntent(
                     R.id.touch_all_day,
                     slotActivity(
                         ctx, widgetId, d, 999, date.timeInMillis,
-                        dayEnd.timeInMillis, true
+                        dayEnd.timeInMillis, true,
+                        if (dayAllDay.size == 1) dayAllDay.first() else null
                     )
                 )
                 val startTime = (date.clone() as Calendar).apply {
                     set(Calendar.HOUR_OF_DAY, firstHour)
                 }
+                val dayCards = cards[d].orEmpty()
                 var offset = 0
                 var slot = 0
                 while (offset < period) {
@@ -181,22 +209,60 @@ open class CalendarWidget : AppWidgetProvider() {
                     val until = (startTime.clone() as Calendar).apply {
                         add(Calendar.MINUTE, (offset + slotMinutes).coerceAtMost(period))
                     }
-                    val hitTarget = RemoteViews(ctx.packageName, R.layout.touch_hour)
-                    hitTarget.setOnClickPendingIntent(
-                        R.id.touch_hour,
-                        slotActivity(
-                            ctx, widgetId, d, slot,
-                            from.timeInMillis, until.timeInMillis, false
+                    val y1 = metrics.gridTop +
+                        (offset.toFloat() / period) * metrics.gridHeight
+                    val y2 = metrics.gridTop +
+                        ((offset + slotMinutes).coerceAtMost(period).toFloat() / period) *
+                        metrics.gridHeight
+                    val midpoint = (y1 + y2) / 2f
+                    val relevant = dayCards.filter {
+                        it.rect.bottom > y1 && it.rect.top < y2
+                    }
+                    // Side-by-side events get separate horizontal touch cells;
+                    // ordinary days use one cell to preserve easy tap targets.
+                    val count = (relevant.maxOfOrNull { it.laneCount } ?: 1)
+                        .coerceIn(1, 4)
+                    val row = RemoteViews(ctx.packageName, R.layout.touch_hour_row)
+                    for (lane in 0 until count) {
+                        val x = metrics.gutter + d * metrics.dayWidth +
+                            (lane + 0.5f) * metrics.dayWidth / count
+                        val matching = relevant.filter {
+                            it.rect.left <= x && x <= it.rect.right
+                        }
+                        // If a card's label has been enlarged into free time,
+                        // tapping any part of that enlarged card still edits it.
+                        val eventCard = matching.minWithOrNull(
+                            compareBy<EventCard>(
+                                { if (midpoint in it.rect.top..it.rect.bottom) 0 else 1 },
+                                { kotlin.math.abs(it.rect.centerY() - midpoint) },
+                                { it.rect.top }
+                            )
                         )
-                    )
-                    hitTarget.setCharSequence(
-                        R.id.touch_hour, "setContentDescription",
-                        (date.get(Calendar.MONTH) + 1).toString() + "월 " +
-                            date.get(Calendar.DATE) + "일 " +
-                            from.get(Calendar.HOUR_OF_DAY) + "시 " +
-                            from.get(Calendar.MINUTE) + "분 일정 확인 또는 추가"
-                    )
-                    dayView.addView(R.id.touch_hour_grid, hitTarget)
+                        val cell = RemoteViews(
+                            ctx.packageName, R.layout.touch_hour_cell
+                        )
+                        cell.setOnClickPendingIntent(
+                            R.id.touch_cell,
+                            slotActivity(
+                                ctx, widgetId, d, slot,
+                                from.timeInMillis, until.timeInMillis,
+                                false, eventCard?.event, lane
+                            )
+                        )
+                        cell.setCharSequence(
+                            R.id.touch_cell, "setContentDescription",
+                            if (eventCard != null) {
+                                eventCard.event.title + " · 일정 수정"
+                            } else {
+                                (date.get(Calendar.MONTH) + 1).toString() + "월 " +
+                                    date.get(Calendar.DATE) + "일 " +
+                                    from.get(Calendar.HOUR_OF_DAY) + "시 " +
+                                    from.get(Calendar.MINUTE) + "분 새 일정"
+                            }
+                        )
+                        row.addView(R.id.touch_hour_cells, cell)
+                    }
+                    dayView.addView(R.id.touch_hour_grid, row)
                     offset += slotMinutes
                     slot++
                 }
@@ -351,7 +417,8 @@ open class CalendarWidget : AppWidgetProvider() {
                     )
                     view.setImageViewBitmap(R.id.timeline_image, bitmap)
                     attachTouchGrid(
-                        ctx, view, id, day, days, startHour, endHour, renderedHeight
+                        ctx, view, id, day, days,
+                        startHour, endHour, width, renderedHeight, data.events
                     )
                     manager.updateAppWidget(id, view)
                 } catch (_: Exception) {
