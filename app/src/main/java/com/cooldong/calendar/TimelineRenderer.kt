@@ -61,27 +61,55 @@ object TimelineRenderer {
         canvas.drawRoundRect(rect, radius, radius, p)
     }
 
+    /**
+     * Readability-first text. Prefer a larger typeface for sparse appointments and
+     * clip/ellipsize only when an event card is genuinely too narrow or short.
+     */
     private fun putEventText(
         canvas: Canvas, content: String, area: RectF, fontSize: Float, foreground: Int
     ) {
-        val usable = area.width() - 5f
-        if (usable < 10f || area.height() < fontSize + 3f) return
-        val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        val maxWidth = area.width() - 7f
+        val maxHeight = area.height() - 4f
+        if (maxWidth < 9f || maxHeight < 8f) return
+
+        // A short event still gets one readable line; labels can span two or more
+        // rows only when the actual time slot is tall enough.
+        val size = min(fontSize, maxHeight * 0.80f).coerceAtLeast(7f)
+        if (size > maxHeight + 0.2f) return
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = foreground
-            textSize = fontSize
-            typeface = Typeface.create(Typeface.DEFAULT, Typeface.NORMAL)
+            textSize = size
+            typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
+            isSubpixelText = true
         }
-        val step = fontSize * 1.17f
-        val lines = max(1, ((area.height() - 4f) / step).toInt())
+        val step = size * 1.18f
+        val lineCount = max(1, min(5, (maxHeight / step).toInt()))
         var remaining = content.replace('\n', ' ').trim()
         canvas.save()
-        canvas.clipRect(area)
-        for (line in 0 until lines) {
+        canvas.clipRect(area.left + 1f, area.top + 1f, area.right - 1f, area.bottom - 1f)
+        for (row in 0 until lineCount) {
             if (remaining.isEmpty()) break
-            val count = max(1, p.breakText(remaining, true, usable, null))
-            val lineText = remaining.take(count)
-            canvas.drawText(lineText, area.left + 2.5f, area.top + 2f + fontSize + line * step, p)
-            remaining = remaining.drop(count).trimStart()
+            val fit = paint.breakText(remaining, true, maxWidth, null)
+            if (fit <= 0) break
+            val hasMore = fit < remaining.length
+            val last = row == lineCount - 1
+            val used = if (hasMore && last) {
+                val ellipsis = "…"
+                val amount = paint.breakText(
+                    remaining, true,
+                    (maxWidth - paint.measureText(ellipsis)).coerceAtLeast(3f),
+                    null
+                ).coerceAtLeast(1)
+                remaining.take(amount) + ellipsis
+            } else {
+                remaining.take(fit)
+            }
+            canvas.drawText(
+                used, area.left + 3.5f,
+                area.top + 2f + size + step * row, paint
+            )
+            if (last) break
+            remaining = remaining.drop(fit).trimStart()
         }
         canvas.restore()
     }
@@ -130,8 +158,10 @@ object TimelineRenderer {
         startHour: Int, endHour: Int,
         transparency: Int, showTimes: Boolean,
         events: List<CalendarEvent>,
-        holidayKeys: Set<Int> = emptySet()
+        holidayKeys: Set<Int> = emptySet(),
+        themeId: Int = 0
     ): Bitmap {
+        val theme = WidgetThemes.get(themeId)
         val w = widthDp.coerceIn(135, 950).toFloat()
         val h = heightDp.coerceIn(140, 1150).toFloat()
         val rawScale = ctx.resources.displayMetrics.density
@@ -141,7 +171,16 @@ object TimelineRenderer {
         canvas.scale(bitmap.width / w, bitmap.height / h)
         val alpha = (255f * (100 - transparency.coerceIn(0, 100)) / 100f).roundToInt()
         canvas.drawColor(Color.TRANSPARENT)
-        rounded(canvas, RectF(0f, 0f, w, h), Color.argb(alpha, 255, 255, 255), 7f)
+        rounded(
+            canvas, RectF(0f, 0f, w, h),
+            Color.argb(
+                alpha,
+                Color.red(theme.background),
+                Color.green(theme.background),
+                Color.blue(theme.background)
+            ),
+            7f
+        )
 
         val small = h < 225f
         // The native widget toolbar contains the date and navigation controls.
@@ -168,7 +207,7 @@ object TimelineRenderer {
         val rangeHours = max(1, endHour - startHour)
         val hourHeight = gridH / rangeHours.toFloat()
         val fill = Paint(Paint.ANTI_ALIAS_FLAG)
-        fill.color = Color.argb(max(0, alpha / 3), 225, 232, 240)
+        fill.color = theme.alternating
 
         for (d in 0 until days) {
             val day = dayDates[d]
@@ -184,7 +223,7 @@ object TimelineRenderer {
                 fill.color = Color.argb((alpha * 0.16f).toInt(), 85, 152, 236)
                 canvas.drawRect(x, topH, x + dayW, gridBottom, fill)
             } else if (d % 2 == 1 && alpha > 0) {
-                fill.color = Color.argb(max(0, alpha / 3), 225, 232, 240)
+                fill.color = theme.alternating
                 canvas.drawRect(x, topH, x + dayW, gridBottom, fill)
             }
             val today = Calendar.getInstance()
@@ -192,23 +231,23 @@ object TimelineRenderer {
             val name = if (days == 1) {
                 (day.get(Calendar.MONTH) + 1).toString() + "/" + day.get(Calendar.DATE) +
                     " (" + weekdays[day.get(Calendar.DAY_OF_WEEK) - 1] + ")"
-            } else if (dayW < 48f) {
+            } else if (dayW < 67f) {
                 weekdays[day.get(Calendar.DAY_OF_WEEK) - 1] + day.get(Calendar.DATE)
             } else {
                 (day.get(Calendar.MONTH) + 1).toString() + "/" + day.get(Calendar.DATE) +
                     " " + weekdays[day.get(Calendar.DAY_OF_WEEK) - 1]
             }
             text(canvas, name, x + 3f, topH + labelH * 0.68f,
-                min(12f, max(8.3f, dayW / 5.5f)),
+                min(13.3f, max(10.0f, dayW / 5.6f)),
                 when {
                     sunday || publicHoliday -> HolidayRules.SUNDAY_RED
                     saturday -> HolidayRules.SATURDAY_BLUE
-                    else -> 0xFF25374A.toInt()
+                    else -> theme.text
                 }, isToday || sunday || saturday || publicHoliday)
-            stroke(canvas, x, topH, x, gridBottom, 0x668D9BAA, 0.75f)
+            stroke(canvas, x, topH, x, gridBottom, theme.grid, 0.65f)
         }
-        stroke(canvas, gutter, topH + labelH, w, topH + labelH, 0x668D9BAA)
-        text(canvas, "종일", 3f, topH + labelH + 15f, 9f, 0xFF61758B.toInt())
+        stroke(canvas, gutter, topH + labelH, w, topH + labelH, theme.grid)
+        text(canvas, "종일", 3f, topH + labelH + 15f, 10.5f, theme.secondaryText)
 
         for (d in 0 until days) {
             if (!hasAllDay) break
@@ -219,25 +258,30 @@ object TimelineRenderer {
             for ((i, ev) in blocks.take(rows).withIndex()) {
                 val y = topH + labelH + 1f + i * 17f
                 val rect = RectF(x + 1f, y, x + dayW - 1f, y + 16f)
-                rounded(canvas, rect, ev.color or -0x1000000, 2f)
-                putEventText(canvas, ev.title, rect, min(10f, max(7.5f, dayW / 6f)), readableText(ev.color))
+                val cardColor = theme.cardFor(ev.calendarId, ev.color)
+                rounded(canvas, rect, cardColor or -0x1000000, 3f)
+                putEventText(
+                    canvas, ev.title, rect,
+                    min(11.7f, max(9.4f, dayW / 5.7f)),
+                    theme.inkFor(cardColor)
+                )
             }
             if (blocks.size > rows) {
-                text(canvas, "+" + (blocks.size - rows), x + dayW - 15f, gridTop - 2f, 8f, 0xFF394C60.toInt())
+                text(canvas, "+" + (blocks.size - rows), x + dayW - 15f, gridTop - 2f, 9f, theme.secondaryText)
             }
         }
-        stroke(canvas, 0f, gridTop, w, gridTop, 0x8894A3B8.toInt(), 0.9f)
+        stroke(canvas, 0f, gridTop, w, gridTop, theme.grid, 0.9f)
 
         val step = if (hourHeight < 17f) 3 else if (hourHeight < 26f) 2 else 1
         for (hr in startHour..endHour) {
             val y = gridTop + (hr - startHour) * hourHeight
             if ((hr - startHour) % step == 0 || hr == endHour) {
-                stroke(canvas, 0f, y, w, y, 0x778EA0B4, if (hr % 6 == 0) 0.8f else 0.5f)
+                stroke(canvas, 0f, y, w, y, theme.grid, if (hr % 6 == 0) 0.8f else 0.5f)
                 if (hr < endHour && y + 12f < gridBottom) {
-                    text(canvas, "%02d".format(Locale.US, hr), 5f, y + 11f, if (gutter < 35f) 9.5f else 10.5f, 0xFF627489.toInt())
+                    text(canvas, "%02d".format(Locale.US, hr), 5f, y + 11.5f, 10.4f, theme.secondaryText)
                 }
             } else {
-                stroke(canvas, gutter, y, w, y, 0x3395A1B1, 0.4f)
+                stroke(canvas, gutter, y, w, y, theme.grid, 0.35f)
             }
         }
 
@@ -274,18 +318,38 @@ object TimelineRenderer {
                 Segment(it, top, max(top + 2f, bottom))
             }.toList()
 
-            for (seg in arrange(segments)) {
+            val arranged = arrange(segments)
+            for (seg in arranged) {
                 val laneW = dayW / seg.laneCount
                 val x1 = gutter + d * dayW + laneW * seg.lane + 1f
                 val x2 = min(w - 1f, x1 + laneW - 2f)
                 val area = RectF(x1, seg.top + 0.5f, max(x1 + 1f, x2), min(gridBottom, seg.bottom - 0.5f))
                 if (area.height() <= 1f) continue
-                val bg = seg.event.color or -0x1000000
-                rounded(canvas, area, bg, 2.2f)
+                val bg = theme.cardFor(seg.event.calendarId, seg.event.color)
+                rounded(canvas, area, bg, 3.1f)
                 val label = (if (showTimes) timeFormat.format(Date(seg.event.begin)) + " " else "") +
                     seg.event.title
-                val font = min(12f, max(7f, laneW / 5.7f))
-                putEventText(canvas, label, area, font, readableText(bg))
+                // Prefer Toss-sized legible labels when neighbouring events leave
+                // enough space. Overlaps gracefully return to smaller text.
+                val nearby = arranged.count { other ->
+                    other !== seg &&
+                        other.top < seg.bottom + hourHeight * 0.5f &&
+                        other.bottom > seg.top - hourHeight * 0.5f
+                }
+                val generous = nearby == 0 && area.height() >= 22f
+                val baseFont = when {
+                    laneW >= 90f -> 14.5f
+                    laneW >= 65f -> 13.4f
+                    laneW >= 51f -> 12.3f
+                    laneW >= 39f -> 11.5f
+                    laneW >= 27f -> 10.3f
+                    else -> 9.1f
+                }
+                val font = min(
+                    15f,
+                    baseFont + if (generous) 0.6f else 0f
+                )
+                putEventText(canvas, label, area, font, theme.inkFor(bg))
             }
         }
         return bitmap
