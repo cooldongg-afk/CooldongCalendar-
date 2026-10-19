@@ -65,51 +65,56 @@ object TimelineRenderer {
      * Readability-first text. Prefer a larger typeface for sparse appointments and
      * clip/ellipsize only when an event card is genuinely too narrow or short.
      */
+    /**
+     * Multiline labels preserve their time/title separator.
+     * Empty neighbouring hours are used by TimelineLayout to grow sparse cards.
+     */
     private fun putEventText(
         canvas: Canvas, content: String, area: RectF, fontSize: Float, foreground: Int
     ) {
         val maxWidth = area.width() - 7f
-        val maxHeight = area.height() - 4f
-        if (maxWidth < 9f || maxHeight < 8f) return
-
-        // A short event still gets one readable line; labels can span two or more
-        // rows only when the actual time slot is tall enough.
-        val size = min(fontSize, maxHeight * 0.80f).coerceAtLeast(7f)
-        if (size > maxHeight + 0.2f) return
+        val maxHeight = area.height() - 5f
+        if (maxWidth < 7.5f || maxHeight < 8f) return
+        val size = min(fontSize, maxHeight * .78f)
+        if (size < 7f) return
         val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
             color = foreground
             textSize = size
             typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             isSubpixelText = true
         }
-        val step = size * 1.18f
-        val lineCount = max(1, min(5, (maxHeight / step).toInt()))
-        var remaining = content.replace('\n', ' ').trim()
+        val lineStep = size * 1.14f
+        val totalRows = max(1, min(7, (maxHeight / lineStep).toInt()))
+        val paragraphs = ArrayDeque(
+            content.split('\n').map { it.trim() }.filter { it.isNotEmpty() }
+        )
         canvas.save()
         canvas.clipRect(area.left + 1f, area.top + 1f, area.right - 1f, area.bottom - 1f)
-        for (row in 0 until lineCount) {
-            if (remaining.isEmpty()) break
-            val fit = paint.breakText(remaining, true, maxWidth, null)
-            if (fit <= 0) break
-            val hasMore = fit < remaining.length
-            val last = row == lineCount - 1
-            val used = if (hasMore && last) {
-                val ellipsis = "…"
-                val amount = paint.breakText(
-                    remaining, true,
-                    (maxWidth - paint.measureText(ellipsis)).coerceAtLeast(3f),
-                    null
-                ).coerceAtLeast(1)
-                remaining.take(amount) + ellipsis
+        var row = 0
+        while (paragraphs.isNotEmpty() && row < totalRows) {
+            val next = paragraphs.removeFirst()
+            if (next.isEmpty()) continue
+            val count = paint.breakText(next, true, maxWidth, null)
+            if (count <= 0) break
+            val remaining = next.drop(count).trimStart()
+            val isLastLine = row + 1 == totalRows
+            val text = if (isLastLine && (
+                    remaining.isNotEmpty() || paragraphs.isNotEmpty()
+                )
+            ) {
+                val ellipsisWidth = paint.measureText("…")
+                val allowed = max(4f, maxWidth - ellipsisWidth)
+                val fitted = paint.breakText(next, true, allowed, null).coerceAtLeast(1)
+                next.take(fitted) + "…"
             } else {
-                remaining.take(fit)
+                next.take(count)
             }
             canvas.drawText(
-                used, area.left + 3.5f,
-                area.top + 2f + size + step * row, paint
+                text, area.left + 3.5f,
+                area.top + 2.5f + size + row * lineStep, paint
             )
-            if (last) break
-            remaining = remaining.drop(fit).trimStart()
+            if (!isLastLine && remaining.isNotEmpty()) paragraphs.addFirst(remaining)
+            row++
         }
         canvas.restore()
     }
@@ -228,17 +233,21 @@ object TimelineRenderer {
             }
             val today = Calendar.getInstance()
             val isToday = dateKey(day) == dateKey(today)
-            val name = if (days == 1) {
-                (day.get(Calendar.MONTH) + 1).toString() + "/" + day.get(Calendar.DATE) +
-                    " (" + weekdays[day.get(Calendar.DAY_OF_WEEK) - 1] + ")"
-            } else if (dayW < 67f) {
-                weekdays[day.get(Calendar.DAY_OF_WEEK) - 1] + day.get(Calendar.DATE)
-            } else {
-                (day.get(Calendar.MONTH) + 1).toString() + "/" + day.get(Calendar.DATE) +
-                    " " + weekdays[day.get(Calendar.DAY_OF_WEEK) - 1]
+            // e.g. "10/19 월" even in the seven-day view; auto-fit narrow cells.
+            val name = (day.get(Calendar.MONTH) + 1).toString() + "/" +
+                day.get(Calendar.DATE) + " " +
+                weekdays[day.get(Calendar.DAY_OF_WEEK) - 1]
+            val p = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+                typeface = Typeface.create(Typeface.DEFAULT, Typeface.BOLD)
             }
-            text(canvas, name, x + 3f, topH + labelH * 0.68f,
-                min(13.3f, max(10.0f, dayW / 5.6f)),
+            var dayFont = min(13f, max(9.5f, dayW / 4.0f))
+            p.textSize = dayFont
+            while (p.measureText(name) > dayW - 4f && dayFont > 8.0f) {
+                dayFont -= 0.5f
+                p.textSize = dayFont
+            }
+            text(canvas, name, x + 2f, topH + labelH * 0.68f,
+                dayFont,
                 when {
                     sunday || publicHoliday -> HolidayRules.SUNDAY_RED
                     saturday -> HolidayRules.SATURDAY_BLUE
@@ -285,72 +294,38 @@ object TimelineRenderer {
             }
         }
 
-        val eventTimeStart = Calendar.getInstance().apply {
-            timeInMillis = start.timeInMillis
-            set(Calendar.HOUR_OF_DAY, startHour)
-            set(Calendar.MINUTE, 0)
-        }
-        for (d in 0 until days) {
-            val day = dayDates[d]
-            val windowStart = (day.clone() as Calendar).apply {
-                set(Calendar.HOUR_OF_DAY, startHour)
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            val windowEnd = (day.clone() as Calendar).apply {
-                if (endHour == 24) {
-                    add(Calendar.DATE, 1)
-                    set(Calendar.HOUR_OF_DAY, 0)
-                } else {
-                    set(Calendar.HOUR_OF_DAY, endHour)
-                }
-                set(Calendar.MINUTE, 0)
-                set(Calendar.SECOND, 0)
-                set(Calendar.MILLISECOND, 0)
-            }.timeInMillis
-            val duration = max(1L, windowEnd - windowStart)
-            val segments = events.asSequence().filter {
-                !it.allDay && it.begin < windowEnd && it.end > windowStart
-            }.map {
-                val top = gridTop + (max(it.begin, windowStart) - windowStart).toFloat() / duration * gridH
-                val bottom = gridTop + (min(it.end, windowEnd) - windowStart).toFloat() / duration * gridH
-                Segment(it, top, max(top + 2f, bottom))
-            }.toList()
-
-            val arranged = arrange(segments)
-            for (seg in arranged) {
-                val laneW = dayW / seg.laneCount
-                val x1 = gutter + d * dayW + laneW * seg.lane + 1f
-                val x2 = min(w - 1f, x1 + laneW - 2f)
-                val area = RectF(x1, seg.top + 0.5f, max(x1 + 1f, x2), min(gridBottom, seg.bottom - 0.5f))
-                if (area.height() <= 1f) continue
-                val bg = theme.cardFor(seg.event.calendarId, seg.event.color)
-                rounded(canvas, area, bg, 3.1f)
-                val label = (if (showTimes) timeFormat.format(Date(seg.event.begin)) + " " else "") +
-                    seg.event.title
-                // Prefer Toss-sized legible labels when neighbouring events leave
-                // enough space. Overlaps gracefully return to smaller text.
-                val nearby = arranged.count { other ->
-                    other !== seg &&
-                        other.top < seg.bottom + hourHeight * 0.5f &&
-                        other.bottom > seg.top - hourHeight * 0.5f
-                }
-                val generous = nearby == 0 && area.height() >= 22f
-                val baseFont = when {
-                    laneW >= 90f -> 14.5f
-                    laneW >= 65f -> 13.4f
-                    laneW >= 51f -> 12.3f
-                    laneW >= 39f -> 11.5f
-                    laneW >= 27f -> 10.3f
-                    else -> 9.1f
-                }
-                val font = min(
-                    15f,
-                    baseFont + if (generous) 0.6f else 0f
+        val cards = TimelineLayout.cards(
+            widthDp, heightDp, start, days, startHour, endHour, events
+        )
+        for (card in cards) {
+            val rect = card.rect
+            if (rect.height() < 1.5f) continue
+            val bg = theme.cardFor(card.event.calendarId, card.event.color)
+            rounded(canvas, rect, bg, 3.2f)
+            // A compact accent tick shows where the real event duration ends
+            // when the label card extends into unused time below it.
+            if (card.realEndY < rect.bottom - 4f) {
+                stroke(
+                    canvas, rect.left + 2f, card.realEndY,
+                    min(rect.right - 2f, rect.left + 12f),
+                    card.realEndY, theme.inkFor(bg), 1f
                 )
-                putEventText(canvas, label, area, font, theme.inkFor(bg))
             }
+            val label = if (showTimes) {
+                timeFormat.format(Date(card.event.begin)) + "\n" + card.event.title
+            } else {
+                card.event.title
+            }
+            val width = rect.width()
+            val font = when {
+                width >= 90f -> 15.4f
+                width >= 65f -> 13.7f
+                width >= 52f -> 12.3f
+                width >= 39f -> 11.1f
+                width >= 29f -> 10.2f
+                else -> 9.3f
+            }
+            putEventText(canvas, label, rect, font, theme.inkFor(bg))
         }
         return bitmap
     }
