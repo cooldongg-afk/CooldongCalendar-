@@ -210,7 +210,7 @@ object TimelineRenderer {
                 text(canvas, "+" + (blocks.size - rows), x + dayW - 15f, gridTop - 2f, 8f, 0xFF394C60.toInt())
             }
         }
-        stroke(canvas, 0f, gridTop, w, gridTop, 0x8894A3B8, 0.9f)
+        stroke(canvas, 0f, gridTop, w, gridTop, 0x8894A3B8.toInt(), 0.9f)
 
         val step = if (hourHeight < 17f) 3 else if (hourHeight < 26f) 2 else 1
         for (hr in startHour..endHour) {
