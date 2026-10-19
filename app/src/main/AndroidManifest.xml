@@ -16,6 +16,11 @@
         android:label="Cooldong Calendar"
         android:allowBackup="true">
 
+        <activity
+            android:name=".SlotActionActivity"
+            android:theme="@android:style/Theme.Material.Light.Dialog.Alert"
+            android:exported="false" />
+
         <activity android:name=".SettingsActivity" android:exported="true">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
