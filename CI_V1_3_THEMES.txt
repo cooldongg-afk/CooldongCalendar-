@@ -1,0 +1,1 @@
+CI smoke test for Cooldong Calendar v1.3: 7 palettes, live preview and adaptive event font sizes.
