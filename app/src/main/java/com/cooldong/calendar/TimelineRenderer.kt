@@ -187,12 +187,14 @@ object TimelineRenderer {
             7f
         )
 
+        val allDayPresent = TimelineLayout.containsVisibleAllDay(start, days, events)
+        val metrics = TimelineLayout.metrics(
+            widthDp, heightDp, days, startHour, endHour, allDayPresent
+        )
         val small = h < 225f
-        // The native widget toolbar contains the date and navigation controls.
-        // Drawing another header into the bitmap would waste valuable row space.
         val topH = 0f
-        val labelH = if (small) 22f else 29f
-        val gutter = 31f
+        val labelH = metrics.labelHeight
+        val gutter = metrics.gutter
         val contentW = w - gutter - 3f
         val dayW = contentW / days
 
@@ -201,16 +203,12 @@ object TimelineRenderer {
         }
         val firstDate = dateKey(dayDates.first())
         val lastDate = dateKey(dayDates.last())
-        val hasAllDay = events.any {
-            it.allDay && utcKey(it.begin) <= lastDate && utcKey(it.end - 1L) >= firstDate
-        }
-        // Keep a tappable all-day lane even when no all-day event exists.
-        val allDayH = if (small) 23f else 34f
-        val gridTop = topH + labelH + allDayH
-        val gridBottom = h - 4f
-        val gridH = max(20f, gridBottom - gridTop)
-        val rangeHours = max(1, endHour - startHour)
-        val hourHeight = gridH / rangeHours.toFloat()
+        val hasAllDay = allDayPresent
+        val allDayH = metrics.allDayHeight
+        val gridTop = metrics.gridTop
+        val gridBottom = metrics.gridBottom
+        val gridH = metrics.gridHeight
+        val hourHeight = metrics.hourHeight
         val fill = Paint(Paint.ANTI_ALIAS_FLAG)
         fill.color = theme.alternating
 
@@ -263,20 +261,47 @@ object TimelineRenderer {
             val x = gutter + d * dayW
             val date = dateKey(dayDates[d])
             val blocks = events.filter { it.allDay && utcKey(it.begin) <= date && utcKey(it.end - 1L) >= date }
-            val rows = if (small) 1 else 2
-            for ((i, ev) in blocks.take(rows).withIndex()) {
-                val y = topH + labelH + 1f + i * 17f
-                val rect = RectF(x + 1f, y, x + dayW - 1f, y + 16f)
+            // One all-day event takes the full available strip, rather than
+            // leaving most of the strip blank as it did in v1.4.
+            val maxRows = when {
+                small -> 1
+                allDayH >= 55f -> 3
+                else -> 2
+            }
+            val visibleRows = min(maxRows, blocks.size)
+            val hidden = blocks.size - visibleRows
+            val counterReserve = if (hidden > 0) 11f else 0f
+            val availableHeight = max(12f, allDayH - 3f - counterReserve)
+            val rowHeight = if (visibleRows > 0) {
+                availableHeight / visibleRows
+            } else {
+                0f
+            }
+            for ((i, ev) in blocks.take(visibleRows).withIndex()) {
+                val y = topH + labelH + 1f + i * rowHeight
+                val rect = RectF(
+                    x + 1f, y, x + dayW - 1f,
+                    min(gridTop - 1f - counterReserve, y + rowHeight - 1f)
+                )
                 val cardColor = theme.cardFor(ev.calendarId, ev.color)
                 rounded(canvas, rect, cardColor or -0x1000000, 3f)
+                // Use two or three text rows for a single all-day event when
+                // space allows; font is still limited by the narrowest column.
+                val font = when {
+                    dayW >= 75f -> 13.5f
+                    dayW >= 49f -> 12.2f
+                    dayW >= 34f -> 11.1f
+                    else -> 9.8f
+                }
                 putEventText(
-                    canvas, ev.title, rect,
-                    min(11.7f, max(9.4f, dayW / 5.7f)),
-                    theme.inkFor(cardColor)
+                    canvas, ev.title, rect, font, theme.inkFor(cardColor)
                 )
             }
-            if (blocks.size > rows) {
-                text(canvas, "+" + (blocks.size - rows), x + dayW - 15f, gridTop - 2f, 9f, theme.secondaryText)
+            if (hidden > 0) {
+                text(
+                    canvas, "+" + hidden, x + dayW - 15f,
+                    gridTop - 2f, 9.5f, theme.secondaryText
+                )
             }
         }
         stroke(canvas, 0f, gridTop, w, gridTop, theme.grid, 0.9f)
@@ -302,15 +327,11 @@ object TimelineRenderer {
             if (rect.height() < 1.5f) continue
             val bg = theme.cardFor(card.event.calendarId, card.event.color)
             rounded(canvas, rect, bg, 3.2f)
-            // A compact accent tick shows where the real event duration ends
-            // when the label card extends into unused time below it.
-            if (card.realEndY < rect.bottom - 4f) {
-                stroke(
-                    canvas, rect.left + 2f, card.realEndY,
-                    min(rect.right - 2f, rect.left + 12f),
-                    card.realEndY, theme.inkFor(bg), 1f
-                )
-            }
+            // Do not draw an end-time strike inside the event card.
+            // In v1.4 the short horizontal tick passed directly through
+            // Korean glyphs, appearing as strikethrough. The actual calendar
+            // duration is still preserved by EventCard.realEndY and the native
+            // Samsung Calendar edit screen. All grid lines stay beneath cards.
             val label = if (showTimes) {
                 timeFormat.format(Date(card.event.begin)) + "\n" + card.event.title
             } else {
