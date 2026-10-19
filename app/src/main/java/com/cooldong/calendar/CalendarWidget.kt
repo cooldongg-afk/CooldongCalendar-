@@ -146,9 +146,11 @@ open class CalendarWidget : AppWidgetProvider() {
             events: List<CalendarEvent>
         ) {
             val metrics = TimelineLayout.metrics(
-                viewWidth, viewHeight, days, firstHour, lastHour
+                viewWidth, viewHeight, days, firstHour, lastHour,
+                TimelineLayout.containsVisibleAllDay(firstDay, days, events)
             )
-            val small = viewHeight.coerceIn(140, 1150) < 225
+            val small = metrics.labelHeight < 23f
+            val tallAllDay = metrics.allDayHeight >= 55f
             val hourHeight = metrics.hourHeight
             val slotMinutes = if (hourHeight >= 43f) 30 else 60
             val period = (lastHour - firstHour) * 60
@@ -170,7 +172,11 @@ open class CalendarWidget : AppWidgetProvider() {
                 }
                 val dayView = RemoteViews(
                     ctx.packageName,
-                    if (small) R.layout.touch_day_small else R.layout.touch_day_regular
+                    when {
+                        small -> R.layout.touch_day_small
+                        tallAllDay -> R.layout.touch_day_tall
+                        else -> R.layout.touch_day_regular
+                    }
                 )
                 dayView.setOnClickPendingIntent(
                     R.id.touch_day_title, activity(ctx, widgetId, false)
