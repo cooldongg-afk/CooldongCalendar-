@@ -1,0 +1,1 @@
+Verify Cooldong Calendar v1.4.2 with red current-time line, progress outline and battery-conscious widget tick updates. No signing key included.
