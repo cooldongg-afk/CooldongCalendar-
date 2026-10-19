@@ -194,6 +194,17 @@ open class CalendarWidget : AppWidgetProvider() {
                     view.setOnClickPendingIntent(R.id.nav_settings, activity(ctx, id, true))
                     view.setOnClickPendingIntent(R.id.nav_title, activity(ctx, id, false))
                     view.setOnClickPendingIntent(R.id.timeline_image, activity(ctx, id, false))
+                    val missing = data.events.isEmpty() || data.error != null
+                    view.setViewVisibility(
+                        R.id.empty_hint, if (missing) View.VISIBLE else View.GONE
+                    )
+                    view.setTextViewText(
+                        R.id.empty_hint,
+                        data.error ?: "이 기간에 표시할 일정이 없습니다.\n⚙ 설정에서 캘린더를 선택하거나 ↻ 를 눌러 새로고침하세요."
+                    )
+                    view.setOnClickPendingIntent(
+                        R.id.empty_hint, activity(ctx, id, true)
+                    )
                     view.setViewVisibility(
                         R.id.nav_refresh,
                         if (width < 270) View.GONE else View.VISIBLE
