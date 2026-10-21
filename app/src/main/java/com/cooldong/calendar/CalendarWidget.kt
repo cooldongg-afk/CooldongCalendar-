@@ -67,7 +67,8 @@ open class CalendarWidget : AppWidgetProvider() {
                 return
             }
             Intent.ACTION_DATE_CHANGED, Intent.ACTION_TIME_CHANGED,
-            Intent.ACTION_TIMEZONE_CHANGED -> refreshInstalledWidgets(context)
+            Intent.ACTION_TIMEZONE_CHANGED,
+            Intent.ACTION_MY_PACKAGE_REPLACED -> refreshInstalledWidgets(context)
         }
         super.onReceive(context, intent)
     }
