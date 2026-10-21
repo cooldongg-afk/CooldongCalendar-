@@ -1,0 +1,1 @@
+Verify Cooldong Calendar v1.4.4: removeAllViews before touch overlay rebuild; all click PendingIntent URIs contain immutable widget/week/day/slot/event identity; reject mismatch in SlotActionActivity. Temporary branch; don't merge.
