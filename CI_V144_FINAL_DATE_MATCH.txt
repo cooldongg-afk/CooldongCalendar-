@@ -1,0 +1,1 @@
+Final smoke check for Cooldong Calendar v1.4.4: dynamic touch view clearing, immutable URI slot identity, stale period detection, and refresh on MY_PACKAGE_REPLACED. This branch must not be merged.
