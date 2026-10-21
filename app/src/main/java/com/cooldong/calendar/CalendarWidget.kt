@@ -120,18 +120,34 @@ open class CalendarWidget : AppWidgetProvider() {
         }
 
         private fun slotActivity(
-            ctx: Context, widgetId: Int, dayIndex: Int, slotIndex: Int,
+            ctx: Context, widgetId: Int, periodStart: Long, dayStart: Long,
+            dayIndex: Int, slotIndex: Int,
             startMillis: Long, endMillis: Long, allDay: Boolean,
             event: CalendarEvent? = null, laneIndex: Int = 0
         ): PendingIntent {
-            // Include lane and event ID in the identity: otherwise Android can
-            // reuse a PendingIntent from a previously rendered empty time slot.
             val eventId = event?.eventId ?: -1L
+            // Immutable identity includes the week anchor, displayed day,
+            // time, lane AND event. One UI may reuse an old widget view after
+            // reapply(); extras alone do not distinguish PendingIntents.
+            val uri = Uri.Builder()
+                .scheme("cooldong")
+                .authority("slot")
+                .appendPath(widgetId.toString())
+                .appendPath(periodStart.toString())
+                .appendPath(dayStart.toString())
+                .appendPath(dayIndex.toString())
+                .appendPath(slotIndex.toString())
+                .appendPath(laneIndex.toString())
+                .appendPath(eventId.toString())
+                .appendPath(startMillis.toString())
+                .appendPath(endMillis.toString())
+                .build()
             val target = Intent(ctx, SlotActionActivity::class.java).apply {
-                data = Uri.parse(
-                    "cooldong://slot/" + widgetId + "/" + dayIndex + "/" +
-                        slotIndex + "/" + laneIndex + "/" + eventId + "/" + startMillis
-                )
+                data = uri
+                putExtra(SlotActionActivity.EXTRA_WIDGET_ID, widgetId)
+                putExtra(SlotActionActivity.EXTRA_PERIOD_START, periodStart)
+                putExtra(SlotActionActivity.EXTRA_DAY_START, dayStart)
+                putExtra(SlotActionActivity.EXTRA_DAY_INDEX, dayIndex)
                 putExtra(SlotActionActivity.EXTRA_START, startMillis)
                 putExtra(SlotActionActivity.EXTRA_END, endMillis)
                 putExtra(SlotActionActivity.EXTRA_ALL_DAY, allDay)
@@ -142,9 +158,11 @@ open class CalendarWidget : AppWidgetProvider() {
                 }
                 addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
             }
+            // CANCEL_CURRENT prevents old click actions keeping a different
+            // date after a page change or scheduled refresh.
             return PendingIntent.getActivity(
-                ctx, 0, target,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
+                ctx, uri.toString().hashCode(), target,
+                PendingIntent.FLAG_CANCEL_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
         }
 
@@ -207,7 +225,8 @@ open class CalendarWidget : AppWidgetProvider() {
                 dayView.setOnClickPendingIntent(
                     R.id.touch_all_day,
                     slotActivity(
-                        ctx, widgetId, d, 999, date.timeInMillis,
+                        ctx, widgetId, firstDay.timeInMillis,
+                        date.timeInMillis, d, 999, date.timeInMillis,
                         dayEnd.timeInMillis, true,
                         if (dayAllDay.size == 1) dayAllDay.first() else null
                     )
@@ -270,7 +289,8 @@ open class CalendarWidget : AppWidgetProvider() {
                         cell.setOnClickPendingIntent(
                             R.id.touch_cell,
                             slotActivity(
-                                ctx, widgetId, d, slot,
+                                ctx, widgetId, firstDay.timeInMillis,
+                                date.timeInMillis, d, slot,
                                 from.timeInMillis, until.timeInMillis,
                                 false, eventCard?.event, lane
                             )
@@ -442,6 +462,10 @@ open class CalendarWidget : AppWidgetProvider() {
                         data.events, data.holidayKeys, theme.id
                     )
                     view.setImageViewBitmap(R.id.timeline_image, bitmap)
+                    // Clear ALL old dynamic hitboxes before repopulating them.
+                    // Otherwise stale cells can survive One UI widget reapply
+                    // and send a different date than the displayed image.
+                    view.removeAllViews(R.id.touch_columns)
                     attachTouchGrid(
                         ctx, view, id, day, days,
                         startHour, endHour, width, renderedHeight, data.events
